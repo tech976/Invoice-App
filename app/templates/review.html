@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Review queue</h1>
+    <p class="subtitle mb0">Bills where a check failed or the reader was unsure. Lowest confidence first.</p>
+  </div>
+  <div class="actions"><a class="btn" href="/invoices">All invoices</a></div>
+</div>
+<div style="height:22px"></div>
+
+<div id="failed"></div>
+<div id="queue"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function load() {
+  const r = await api('/api/reports/review-queue');
+
+  document.getElementById('failed').innerHTML = r.failed_documents.length ? `
+    <div class="card">
+      <h3>Could not be read</h3>
+      ${r.failed_documents.map(d => `
+        <div class="flag error">
+          <div class="msg"><strong>${esc(d.filename)}</strong> — ${esc(d.error_message || 'unknown error')}</div>
+          <div class="actions">
+            <button class="small" onclick="retry(${d.id})">Try again</button>
+            <a class="btn small" href="/api/documents/${d.id}/file" target="_blank">Open file</a>
+          </div>
+        </div>`).join('')}
+    </div>` : '';
+
+  document.getElementById('queue').innerHTML = r.invoices.length
+    ? r.invoices.map(card).join('')
+    : '<div class="card"><div class="empty">Nothing waiting — every bill has passed its checks.</div></div>';
+}
+
+function card(i) {
+  return `
+  <div class="card">
+    <div class="page-head" style="margin-bottom:14px">
+      <div>
+        <h2 style="margin-bottom:2px">
+          <a href="/invoices/${i.id}">${esc(i.invoice_number || '(no number)')}</a>
+          ${statusBadge(i.status)}
+        </h2>
+        <div class="faint">${dmy(i.invoice_date)} · ${esc(i.seller?.name || '—')} → ${esc(i.buyer?.name || '—')}
+          · ${rupees(i.grand_total)}
+          ${i.confidence != null ? ` · ${(i.confidence * 100).toFixed(0)}% confidence` : ''}</div>
+      </div>
+      <div class="actions"><a class="btn primary" href="/invoices/${i.id}">Review</a></div>
+    </div>
+    <div style="margin-top:10px">
+      ${i.flags.map(f => `
+        <div class="flag ${f.severity}">
+          <div class="msg">${esc(f.message)}</div>
+          <div class="rule">${esc(f.rule)}</div>
+        </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+async function retry(id) {
+  try { await api(`/api/documents/${id}/reprocess`, { method: 'POST' }); toast('Queued again', 'ok'); setTimeout(load, 1200); }
+  catch (e) { toast(e.message, 'err'); }
+}
+
+load().catch(e => toast(e.message, 'err'));
+</script>
+{% endblock %}

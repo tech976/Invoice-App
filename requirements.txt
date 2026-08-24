@@ -1,0 +1,27 @@
+# --- web ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+jinja2==3.1.5
+python-multipart==0.0.20
+
+# --- data ---
+SQLAlchemy==2.0.36
+alembic==1.14.0
+psycopg[binary]==3.2.3
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# --- pdf / ocr ---
+pypdf==5.1.0
+pdfplumber==0.11.4
+pdf2image==1.17.0
+pytesseract==0.3.13
+Pillow==11.0.0
+
+# --- llm ---
+anthropic>=0.75.0
+
+# --- utils ---
+python-dateutil==2.9.0.post0
+rapidfuzz==3.10.1
+openpyxl==3.1.5

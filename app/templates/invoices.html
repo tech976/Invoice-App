@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Invoices</h1>
+    <p class="subtitle mb0" id="count">Loading…</p>
+  </div>
+  <div class="actions">
+    <button id="csv">CSV</button>
+    <button id="lines-csv">Line CSV</button>
+    <button id="xlsx">Excel</button>
+    <a class="btn primary" href="/upload">Upload bills</a>
+  </div>
+</div>
+
+<div class="toolbar" style="margin-top:22px">
+  <input id="q" class="search" placeholder="Invoice no, party, vehicle, e-way bill…">
+  <select id="seller"><option value="">Any seller</option></select>
+  <select id="buyer"><option value="">Any buyer</option></select>
+  <select id="transporter"><option value="">Any transporter</option></select>
+  <select id="status">
+    <option value="">Any status</option>
+    <option value="needs_review">Needs review</option>
+    <option value="extracted">Extracted</option>
+    <option value="confirmed">Confirmed</option>
+  </select>
+  <input type="date" id="from" title="From date" style="min-width:145px">
+  <input type="date" id="to" title="To date" style="min-width:145px">
+  <select id="sort">
+    <option value="date_desc">Newest bill date</option>
+    <option value="date_asc">Oldest bill date</option>
+    <option value="amount_desc">Largest amount</option>
+    <option value="recent">Recently uploaded</option>
+  </select>
+</div>
+
+<div class="card pad0">
+  <div class="table-wrap"><table class="wide" id="list">
+    <thead><tr>
+      <th>Invoice</th><th>Date</th><th>Seller</th><th>Buyer</th><th>Broker</th>
+      <th>Transporter</th><th class="num">Qty</th><th class="num">Taxable ₹</th>
+      <th class="num">Total ₹</th><th>Status</th>
+    </tr></thead>
+    <tbody></tbody>
+    <tfoot></tfoot>
+  </table></div>
+</div>
+<div class="toolbar" style="margin-top:12px">
+  <button id="more" style="display:none">Load more</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let offset = 0;
+const LIMIT = 100;
+
+function filters() {
+  return {
+    q: document.getElementById('q').value,
+    seller_id: document.getElementById('seller').value,
+    buyer_id: document.getElementById('buyer').value,
+    transporter_id: document.getElementById('transporter').value,
+    status: document.getElementById('status').value,
+    date_from: document.getElementById('from').value,
+    date_to: document.getElementById('to').value,
+    sort: document.getElementById('sort').value,
+  };
+}
+
+async function fillParties() {
+  for (const [role, id] of [['seller','seller'], ['buyer','buyer'], ['transporter','transporter']]) {
+    const r = await api('/api/parties?' + qs({ role, limit: 500 }));
+    const sel = document.getElementById(id);
+    r.parties.forEach(p => sel.add(new Option(p.name, p.id)));
+  }
+}
+
+async function load(reset = true) {
+  if (reset) { offset = 0; document.querySelector('#list tbody').innerHTML = ''; }
+  const r = await api('/api/invoices?' + qs({ ...filters(), limit: LIMIT, offset }));
+
+  document.getElementById('count').textContent =
+    `${r.total} invoice(s) · ${rupees(r.page_totals.grand_total)} on this page`;
+
+  const rows = r.invoices.map(i => `
+    <tr>
+      <td><a href="/invoices/${i.id}">${esc(i.invoice_number || '(no number)')}</a>
+        ${i.error_count ? `<span class="badge err">${i.error_count}</span>` : ''}</td>
+      <td class="nowrap">${dmy(i.invoice_date)}</td>
+      <td>${partyLink(i.seller)}</td>
+      <td>${partyLink(i.buyer)}</td>
+      <td>${i.broker ? partyLink(i.broker) : '<span class="muted">—</span>'}</td>
+      <td>${partyLink(i.transporter)}</td>
+      <td class="num">${qty(i.total_quantity)} ${esc(i.total_quantity_uom || '')}</td>
+      <td class="num">${money(i.taxable_value)}</td>
+      <td class="num">${money(i.grand_total)}</td>
+      <td>${statusBadge(i.status)}</td>
+    </tr>`).join('');
+  document.querySelector('#list tbody').insertAdjacentHTML('beforeend',
+    rows || (offset === 0 ? '<tr><td colspan="10" class="empty">No invoices match.</td></tr>' : ''));
+
+  document.querySelector('#list tfoot').innerHTML = r.invoices.length ? `
+    <tr><td colspan="7">Page total</td>
+      <td class="num">${money(r.page_totals.taxable_value)}</td>
+      <td class="num">${money(r.page_totals.grand_total)}</td><td></td></tr>` : '';
+
+  offset += r.shown;
+  document.getElementById('more').style.display = offset < r.total ? '' : 'none';
+}
+
+const go = debounce(() => load(true).catch(e => toast(e.message, 'err')), 250);
+['q','seller','buyer','transporter','status','from','to','sort']
+  .forEach(id => document.getElementById(id).addEventListener('input', go));
+document.getElementById('more').onclick = () => load(false);
+
+const exportUrl = (path, extra = {}) => path + '?' + qs({ ...filters(), q: undefined, sort: undefined, ...extra });
+document.getElementById('csv').onclick = () => location = exportUrl('/api/exports/invoices.csv');
+document.getElementById('lines-csv').onclick = () => location = exportUrl('/api/exports/invoices.csv', { level: 'line' });
+document.getElementById('xlsx').onclick = () => location = exportUrl('/api/exports/invoices.xlsx');
+
+fillParties().then(() => load()).catch(e => toast(e.message, 'err'));
+</script>
+{% endblock %}

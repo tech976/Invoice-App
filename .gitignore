@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/files/
+data/pages/
+data/exports/
+*.log
+.pytest_cache/
+.DS_Store
+
+# Real bills and their printed values stay out of the repository.
+tests/local_bills.py

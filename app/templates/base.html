@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · Invoice Ledger</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧾</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Invoice<span>Ledger</span></div>
+  <nav class="main">
+    <a href="/" class="{{ 'active' if nav == 'dashboard' }}">Dashboard</a>
+    <a href="/upload" class="{{ 'active' if nav == 'upload' }}">Upload</a>
+    <a href="/invoices" class="{{ 'active' if nav == 'invoices' }}">Invoices</a>
+    <a href="/review" class="{{ 'active' if nav == 'review' }}">Review</a>
+    <a href="/parties" class="{{ 'active' if nav == 'parties' }}">Parties</a>
+    <a href="/reports" class="{{ 'active' if nav == 'reports' }}">Reports</a>
+  </nav>
+  <div class="meta" id="topmeta"></div>
+</header>
+
+<main class="{{ 'wide' if wide }}">
+  {% block content %}{% endblock %}
+</main>
+
+<div id="toast"></div>
+<script src="/static/app.js"></script>
+<script>
+  api('/api/health').then(h => {
+    document.getElementById('topmeta').innerHTML = h.api_key_configured
+      ? esc(h.model)
+      : '<span class="badge err">no API key &mdash; set ANTHROPIC_API_KEY in .env</span>';
+  }).catch(() => {});
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Parties</h1>
+    <p class="subtitle mb0" id="count">Sellers, buyers, transporters and brokers, identified by GSTIN.</p>
+  </div>
+</div>
+
+<div class="toolbar" style="margin-top:22px">
+  <input id="q" class="search" placeholder="Name, GSTIN or city…">
+  <select id="role">
+    <option value="">All roles</option>
+    <option value="seller">Sellers</option>
+    <option value="buyer">Buyers</option>
+    <option value="transporter">Transporters</option>
+    <option value="broker">Brokers</option>
+  </select>
+</div>
+
+<div class="card pad0">
+  <div class="table-wrap"><table id="list">
+    <thead><tr><th>Name</th><th>GSTIN</th><th>State</th><th>Roles</th>
+      <th>Also known as</th></tr></thead>
+    <tbody></tbody></table></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function load() {
+  const r = await api('/api/parties?' + qs({
+    q: document.getElementById('q').value,
+    role: document.getElementById('role').value,
+    limit: 500,
+  }));
+  document.getElementById('count').textContent =
+    `${r.total} party record(s) — identified by GSTIN where the bill prints one.`;
+
+  document.querySelector('#list tbody').innerHTML = r.parties.length ? r.parties.map(p => `
+    <tr>
+      <td><a href="/parties/${p.id}">${esc(p.name)}</a>
+        ${p.is_verified ? ' <span class="badge ok">verified</span>' : ''}
+        ${p.city ? `<div class="faint">${esc(p.city)}</div>` : ''}</td>
+      <td class="mono">${esc(p.gstin || '—')}</td>
+      <td>${esc(p.state_name || '—')}</td>
+      <td>${['seller','buyer','transporter','broker']
+            .filter(x => p['is_' + x])
+            .map(x => `<span class="badge info plain">${x}</span>`).join(' ') || '—'}</td>
+      <td class="faint">${p.aliases.length ? esc(p.aliases.join(' · ')) : '—'}</td>
+    </tr>`).join('') : '<tr><td colspan="5" class="empty">No parties yet.</td></tr>';
+}
+
+const go = debounce(() => load().catch(e => toast(e.message, 'err')), 250);
+document.getElementById('q').addEventListener('input', go);
+document.getElementById('role').addEventListener('change', go);
+load().catch(e => toast(e.message, 'err'));
+</script>
+{% endblock %}
