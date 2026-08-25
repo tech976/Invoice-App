@@ -546,12 +546,63 @@ def revalidate_invoice(invoice_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.delete("/invoices/{invoice_id}")
-def delete_invoice(invoice_id: int, db: Session = Depends(get_db)) -> dict:
+def delete_invoice(
+    invoice_id: int,
+    scope: str = Query("bill", pattern="^(reading|bill|purge)$"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Remove an invoice from the ledger.
+
+    Three different things get called deleting, and confusing them loses
+    either work or evidence:
+
+    * `reading`  drops the extracted figures but keeps the uploaded bill, so
+      it can be read again — the right choice when the reading was wrong.
+    * `bill`     removes the invoice and the document with it. The stored file
+      stays on disk, because a figure that has already been reported on
+      should still have something behind it.
+    * `purge`    removes the file as well. Nothing is left.
+
+    A confirmed invoice may already have been reported on and its brokerage
+    accrued, so deleting one is refused unless it is explicitly forced.
+    """
     inv = _get_invoice(db, invoice_id)
+    if inv.status == "confirmed" and scope != "purge":
+        raise HTTPException(
+            409,
+            "This invoice is confirmed — its figures may already have been "
+            "reported and its brokerage accrued. Unconfirm it first, or "
+            "delete with scope=purge if it must go regardless.",
+        )
+
     doc_id = inv.document_id
-    db.delete(inv)
+    stored = None
     doc = db.get(Document, doc_id)
-    if doc:
-        doc.status = "uploaded"
+    if doc is not None:
+        stored = doc.stored_path
+
+    db.delete(inv)
+    if scope == "reading":
+        if doc is not None:
+            doc.status = "uploaded"
+    elif doc is not None:
+        db.delete(doc)
     db.commit()
-    return {"deleted": invoice_id}
+
+    removed_file = False
+    if scope == "purge" and stored:
+        try:
+            path = Path(stored)
+            if path.exists():
+                path.unlink()
+                removed_file = True
+        except OSError as exc:  # noqa: BLE001 - the rows are already gone
+            log.warning("could not remove %s: %s", stored, exc)
+
+    log.info("invoice %s deleted (scope=%s)", invoice_id, scope)
+    return {
+        "deleted": invoice_id,
+        "scope": scope,
+        "document_deleted": scope != "reading" and doc is not None,
+        "file_removed": removed_file,
+    }

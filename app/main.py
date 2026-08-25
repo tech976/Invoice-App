@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.api.reports import router as reports_router
+from app.api.voice import router as voice_router
 from app.api.routes import router as api_router
 from app.config import BASE_DIR, settings
 from app.db import get_db, init_db
@@ -52,6 +53,7 @@ app = FastAPI(
 
 app.include_router(api_router)
 app.include_router(reports_router)
+app.include_router(voice_router)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), name="static")
 
 
@@ -97,6 +99,21 @@ def page_dashboard(request: Request):
 @app.get("/upload")
 def page_upload(request: Request):
     return _page(request, "upload.html", title="Upload Bills", nav="upload")
+
+
+@app.get("/speak")
+def page_speak(request: Request):
+    return _page(request, "speak.html", title="Book a Trade", nav="speak")
+
+
+@app.get("/training")
+def page_training(request: Request):
+    return _page(request, "training.html", title="Teach the recogniser", nav="training")
+
+
+@app.get("/trades")
+def page_trades(request: Request):
+    return _page(request, "trades.html", title="Trades", nav="trades")
 
 
 @app.get("/invoices")

@@ -573,6 +573,73 @@ class Correction(Base):
 # ===========================================================================
 
 
+# --------------------------------------------------------------------------
+# Voice trade book
+#
+# Entirely self-contained: one table, no foreign keys, nothing shared with the
+# invoice ledger. The two are different things — this is what the broker said
+# into his phone, that is what a seller posted him afterwards — and neither
+# needs the other to exist. Parties and goods are stored as spoken, in plain
+# text, because he knows who C31 is and there is no list to keep.
+# --------------------------------------------------------------------------
+
+
+class VoiceClip(TimestampMixin, Base):
+    """A recording, what the machine heard, and what was actually said.
+
+    The third of those is the valuable one. A recogniser can only be taught by
+    example, and every clip the broker corrects is an example — his voice, his
+    accent, his market's noise, his names. Kept here they accumulate into the
+    dataset that a fine-tune needs, as a by-product of using the thing rather
+    than as a separate chore.
+    """
+
+    __tablename__ = "voice_clips"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    filename: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    heard: Mapped[Optional[str]] = mapped_column(Text)
+    # What the broker says was really said. Null until somebody confirms it.
+    said: Mapped[Optional[str]] = mapped_column(Text)
+    engine: Mapped[Optional[str]] = mapped_column(String(60))
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer)
+    language: Mapped[Optional[str]] = mapped_column(String(12))
+    # 'new' until reviewed, then 'confirmed' (heard was right) or 'corrected'.
+    status: Mapped[str] = mapped_column(String(20), default="new", index=True)
+
+
+class Trade(TimestampMixin, Base):
+    """A deal as the broker dictated it.
+
+    `heard` keeps the raw transcription and `parsed` what was made of it, so a
+    disputed entry can be traced back to the words actually spoken. Nothing
+    reaches this table until a person has read the fields back — a dictated
+    rate has no second source to check it against.
+    """
+
+    __tablename__ = "trades"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    traded_on: Mapped[Optional[date]] = mapped_column(Date, index=True)
+
+    # As said: a code like 'C31', or a name, or whatever he called them.
+    seller: Mapped[Optional[str]] = mapped_column(String(120), index=True)
+    buyer: Mapped[Optional[str]] = mapped_column(String(120), index=True)
+    goods: Mapped[Optional[str]] = mapped_column(String(160), index=True)
+
+    quantity: Mapped[Optional[float]] = mapped_column(Numeric(16, 3))
+    uom: Mapped[Optional[str]] = mapped_column(String(12))
+    rate: Mapped[Optional[float]] = mapped_column(Numeric(16, 4))
+    value: Mapped[Optional[float]] = mapped_column(Numeric(16, 2))
+
+    heard: Mapped[Optional[str]] = mapped_column(Text)
+    parsed: Mapped[Optional[dict]] = mapped_column(JSON)
+    source: Mapped[str] = mapped_column(String(20), default="voice")
+    status: Mapped[str] = mapped_column(String(20), default="booked", index=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+
+
+
 class BrokerageRule(TimestampMixin, Base):
     """How much the broker earns on a bill.
 

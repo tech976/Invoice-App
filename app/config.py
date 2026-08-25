@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     # --- storage --------------------------------------------------------
     data_dir: Path = BASE_DIR / "data"
 
+    # --- extraction -----------------------------------------------------
+    # 'local' reads the PDF's own text layer and its e-invoice QR, with no
+    # model and no network. 'claude' sends the document to the API. See
+    # EXTRACTION_PLAN.md.
+    extraction_backend: str = "local"
+
     # --- llm extraction -------------------------------------------------
     anthropic_api_key: str | None = None
     # The workhorse. Sonnet 5 is strong enough for transcription and a
@@ -41,6 +47,25 @@ class Settings(BaseSettings):
     crosscheck_min_value: float = 1_000_000.0
     # So does anything the first reading was less than this sure about.
     crosscheck_min_confidence: float = 0.90
+
+    # --- voice entry ----------------------------------------------------
+    # Which recogniser model to load. 'small' is the smallest that copes with
+    # Hindi/Marathi/Gujarati mixed with English; 'base' is faster and worse.
+    speech_model: str = "small"
+    # Left empty on purpose for stock Whisper: a sentence switching language
+    # mid-way is transcribed better when the model decides for itself. Set it
+    # to 'hi' or 'mr' when using a model fine-tuned on one language — those
+    # have no detector and must be told. Note that such a model returns
+    # Devanagari, so names are stored in that script.
+    speech_language: str = ""
+    max_audio_mb: int = 10
+    # A wider beam is slower and more accurate. Five is Whisper's default;
+    # these clips are short enough that ten is affordable.
+    speech_beam_size: int = 10
+    # Filter, denoise and level the recording before the model hears it. A
+    # market floor is noisy and this costs milliseconds; measure it off and on
+    # with scripts/bench_speech.py on your own recordings before trusting it.
+    speech_clean_audio: bool = True
 
     # --- pipeline -------------------------------------------------------
     worker_threads: int = 2

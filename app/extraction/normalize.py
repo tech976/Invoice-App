@@ -82,10 +82,18 @@ def q2(value: Decimal | None) -> Decimal | None:
 # --------------------------------------------------------------------------
 
 
-def parse_date(value) -> date | None:
-    """Parse a date, always day-first — Indian bills never print month-first.
+# An ISO date is already unambiguous: 2026-06-01 is 1 June, never 6 January.
+_ISO_DATE = re.compile(r"(\d{4})-(\d{2})-(\d{2})$")
 
-    `03/04/2026` is 3 April 2026. `21-Jul-26` is 21 July 2026.
+
+def parse_date(value) -> date | None:
+    """Parse a date, day-first unless it is already ISO.
+
+    `03/04/2026` is 3 April 2026. `21-Jul-26` is 21 July 2026. Day-first is
+    right for anything printed on an Indian bill, but wrong for the ISO dates
+    the extraction schema asks the model for: dateutil reads `2026-06-01`
+    day-first as 6 January, silently moving the bill — and its financial
+    year — whenever the day is 12 or less.
     """
     if value is None or value == "":
         return None
@@ -99,6 +107,13 @@ def parse_date(value) -> date | None:
         return None
     # Drop a trailing time component such as '21-Jul-26 6:31 PM'.
     text = re.sub(r"\s+\d{1,2}:\d{2}(:\d{2})?\s*([APap][Mm])?$", "", text).strip()
+
+    iso = _ISO_DATE.match(text)
+    if iso:
+        try:
+            return date(int(iso[1]), int(iso[2]), int(iso[3]))
+        except ValueError:
+            return None
 
     try:
         parsed = dateparser.parse(text, dayfirst=True, fuzzy=True).date()

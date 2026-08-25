@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Trades</h1>
+<p class="subtitle">Deals as the broker booked them, before the seller's invoice arrives.</p>
+<div class="card pad0">
+  <div class="table-wrap"><table id="trades">
+    <thead><tr><th>Date</th><th>Seller</th><th>Buyer</th><th>Product</th>
+      <th class="num">Qty</th><th class="num">Rate</th><th class="num">Value</th>
+      <th>Status</th><th>Heard</th></tr></thead><tbody></tbody></table></div>
+</div>
+<script>
+const num = v => v == null ? '' : Number(v).toLocaleString('en-IN');
+fetch('/api/voice/trades?limit=200').then(r => r.json()).then(d => {
+  document.querySelector('#trades tbody').innerHTML = d.trades.map(t => `
+    <tr><td>${t.traded_on||''}</td><td>${t.seller||'—'}</td><td>${t.buyer||'—'}</td>
+    <td>${t.goods||'—'}</td><td class="num">${num(t.quantity)} ${t.uom||''}</td>
+    <td class="num">${num(t.rate)}</td><td class="num">${num(t.value)}</td>
+    <td>${t.status}</td><td class="small">${t.heard||''}</td></tr>`).join('')
+    || '<tr><td colspan="9" class="small">No trades booked yet.</td></tr>';
+});
+</script>
+{% endblock %}

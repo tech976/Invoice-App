@@ -39,7 +39,7 @@
     <thead><tr>
       <th>Invoice</th><th>Date</th><th>Seller</th><th>Buyer</th><th>Broker</th>
       <th>Transporter</th><th class="num">Qty</th><th class="num">Taxable ₹</th>
-      <th class="num">Total ₹</th><th>Status</th>
+      <th class="num">Total ₹</th><th>Status</th><th></th>
     </tr></thead>
     <tbody></tbody>
     <tfoot></tfoot>
@@ -96,18 +96,57 @@ async function load(reset = true) {
       <td class="num">${money(i.taxable_value)}</td>
       <td class="num">${money(i.grand_total)}</td>
       <td>${statusBadge(i.status)}</td>
+      <td><button class="small danger" data-del="${i.id}" title="Delete this invoice">Delete</button></td>
     </tr>`).join('');
   document.querySelector('#list tbody').insertAdjacentHTML('beforeend',
-    rows || (offset === 0 ? '<tr><td colspan="10" class="empty">No invoices match.</td></tr>' : ''));
+    rows || (offset === 0 ? '<tr><td colspan="11" class="empty">No invoices match.</td></tr>' : ''));
 
   document.querySelector('#list tfoot').innerHTML = r.invoices.length ? `
     <tr><td colspan="7">Page total</td>
       <td class="num">${money(r.page_totals.taxable_value)}</td>
-      <td class="num">${money(r.page_totals.grand_total)}</td><td></td></tr>` : '';
+      <td class="num">${money(r.page_totals.grand_total)}</td><td></td><td></td></tr>` : '';
 
   offset += r.shown;
   document.getElementById('more').style.display = offset < r.total ? '' : 'none';
+  byId = Object.fromEntries(r.invoices.map(i => [i.id, i]));
 }
+
+// One listener on the table rather than one per row, so it survives the rows
+// being appended when another page is loaded.
+let byId = {};
+document.querySelector('#list').addEventListener('click', async (ev) => {
+  const id = ev.target.dataset && ev.target.dataset.del;
+  if (!id) return;
+  const i = byId[id] || {};
+  const seller = (i.seller && i.seller.name) || 'unknown seller';
+  const buyer = (i.buyer && i.buyer.name) || 'unknown buyer';
+
+  const scope = await confirmDialog({
+    title: 'Delete this invoice?',
+    message: 'Choose how much of it to remove. This cannot be undone.',
+    detail: `<b>${esc(i.invoice_number || 'no number')}</b> &middot; ${dmy(i.invoice_date)}<br>
+             ${esc(seller)} &rarr; ${esc(buyer)}<br>${rupees(i.grand_total)}`,
+    choices: [
+      { value: 'bill', label: 'Delete the invoice and the uploaded bill',
+        hint: 'Gone from the ledger. The original file stays on disk.' },
+      { value: 'reading', label: 'Delete only what was read from it',
+        hint: 'Keeps the bill so it can be read again.' },
+      { value: 'purge', label: 'Delete everything, including the stored file',
+        hint: 'Nothing is left.' },
+    ],
+    warning: i.status === 'confirmed'
+      ? 'This invoice is confirmed — its brokerage may already be accrued and reported.'
+      : '',
+    confirmLabel: 'Delete',
+  });
+  if (!scope) return;
+
+  try {
+    await api(`/api/invoices/${id}?scope=${scope}`, { method: 'DELETE' });
+    toast(`Invoice ${i.invoice_number || id} deleted`, 'ok');
+    load();
+  } catch (e) { toast(e.message, 'err'); }
+});
 
 const go = debounce(() => load(true).catch(e => toast(e.message, 'err')), 250);
 ['q','seller','buyer','transporter','status','from','to','sort']

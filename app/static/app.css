@@ -284,6 +284,29 @@ select {
   cursor: pointer;
 }
 
+/* Radios and checkboxes are not text boxes. The rule above sizes every input
+   to a full-width, bordered, 40px field and strips its native appearance,
+   which turns a radio into a large empty rectangle. */
+input[type="radio"], input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  min-width: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  appearance: auto;
+  -webkit-appearance: auto;
+  accent-color: var(--accent);
+  flex: none;
+  cursor: pointer;
+}
+input[type="radio"]:focus-visible, input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
 input[type="date"] { cursor: pointer; }
 input.num { text-align: right; font-variant-numeric: tabular-nums; }
 
@@ -709,3 +732,63 @@ tfoot td {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #d6d9df; border-radius: 6px; border: 2px solid var(--page); }
 ::-webkit-scrollbar-thumb:hover { background: #c2c6ce; }
+
+/* --------------------------------------------------------------------------
+   Confirmation dialog
+
+   Used before anything irreversible. Deliberately not a browser confirm():
+   deleting a bill needs to say which bill, and what will be gone afterwards,
+   because the figures on it may already have been reported on.
+   -------------------------------------------------------------------------- */
+
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(16, 18, 22, 0.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  animation: modal-fade 0.12s ease-out;
+}
+@keyframes modal-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.modal {
+  background: var(--surface);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 48px rgba(16, 18, 22, 0.24);
+  width: 100%; max-width: 460px;
+  padding: 22px 24px 18px;
+  animation: modal-rise 0.14s ease-out;
+}
+@keyframes modal-rise {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+.modal h3 { margin: 0 0 10px; font-size: 16.5px; font-weight: 650; color: var(--text); }
+.modal p  { margin: 0 0 12px; font-size: 13.5px; color: var(--text-body); line-height: 1.55; }
+.modal .detail {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 14px;
+  font-size: 13px; color: var(--text-body);
+}
+.modal .detail b { color: var(--text); }
+.modal .warn-note {
+  color: var(--red); font-size: 12.5px; margin-bottom: 14px; display: block;
+}
+.modal .choices { margin-bottom: 14px; }
+.modal .choices label {
+  display: flex; gap: 9px; align-items: flex-start;
+  padding: 9px 11px; margin-bottom: 6px; cursor: pointer;
+  border: 1px solid var(--border-input); border-radius: 8px;
+  font-size: 13px; line-height: 1.45;
+}
+.modal .choices label:hover { border-color: var(--border-strong); background: var(--surface-subtle); }
+.modal .choices input { margin-top: 3px; }
+.modal .choices label:has(input:checked) {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+.modal .choices .hint { display: block; color: var(--text-muted); font-size: 12px; }
+.modal .actions { display: flex; gap: 9px; justify-content: flex-end; }

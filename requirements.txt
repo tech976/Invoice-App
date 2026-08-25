@@ -11,12 +11,29 @@ psycopg[binary]==3.2.3
 pydantic==2.10.4
 pydantic-settings==2.7.0
 
+# --- local extraction ---
+# Decodes the e-invoice QR; ships as a wheel, no system packages.
+zxing-cpp==2.3.0
+# Renders pages without poppler, and is what pdfplumber already pulls in.
+pypdfium2>=4.30.0
+# Reads glyph outlines out of PDFs whose fonts carry no character map.
+fonttools==4.55.3
+
 # --- pdf / ocr ---
 pypdf==5.1.0
 pdfplumber==0.11.4
 pdf2image==1.17.0
 pytesseract==0.3.13
 Pillow==11.0.0
+
+# --- voice entry ---
+# Speech recognition on the CPU, offline. The model is a file fetched once at
+# setup (scripts/fetch_speech_model.py); nothing is called at run time.
+faster-whisper==1.2.1
+# Cleaning up a market recording before the model hears it.
+noisereduce==3.0.3
+soundfile==0.13.1
+scipy==1.18.1
 
 # --- llm ---
 anthropic>=0.75.0

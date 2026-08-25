@@ -495,9 +495,40 @@ async function reread() {
 }
 
 async function removeInvoice() {
-  if (!confirm('Delete this invoice? The uploaded bill itself is kept.')) return;
-  try { await api('/api/invoices/' + INVOICE_ID, { method: 'DELETE' }); location = '/invoices'; }
-  catch (e) { toast(e.message, 'err'); }
+  const seller = (inv.seller && inv.seller.name) || 'unknown seller';
+  const buyer  = (inv.buyer && inv.buyer.name) || 'unknown buyer';
+  const detail = `
+    <b>${esc(inv.invoice_number || 'no number')}</b> &middot; ${dmy(inv.invoice_date)}<br>
+    ${esc(seller)} &rarr; ${esc(buyer)}<br>
+    ${rupees(inv.grand_total)}${inv.document ? ` &middot; ${esc(inv.document.filename)}` : ''}`;
+
+  const scope = await confirmDialog({
+    title: 'Delete this invoice?',
+    message: 'Choose how much of it to remove. This cannot be undone.',
+    detail,
+    choices: [
+      { value: 'bill', label: 'Delete the invoice and the uploaded bill',
+        hint: 'Gone from the ledger. The original file stays on disk.' },
+      { value: 'reading', label: 'Delete only what was read from it',
+        hint: 'Keeps the bill so it can be read again — use this when the reading was wrong.' },
+      { value: 'purge', label: 'Delete everything, including the stored file',
+        hint: 'Nothing is left. Use only if the bill should never have been uploaded.' },
+    ],
+    warning: inv.status === 'confirmed'
+      ? 'This invoice is confirmed — its brokerage may already be accrued and reported.'
+      : '',
+    confirmLabel: 'Delete',
+  });
+  if (!scope) return;
+
+  try {
+    const r = await api(`/api/invoices/${INVOICE_ID}?scope=${scope}`, { method: 'DELETE' });
+    if (scope === 'reading') {
+      toast('Reading deleted — the bill can be read again', 'ok');
+      return load();
+    }
+    location = '/invoices';
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 load().catch(e => {

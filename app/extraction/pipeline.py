@@ -18,20 +18,22 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.business.brokerage import compute_brokerage
 from app.extraction.crosscheck import compare_readings
 from app.config import settings
-from app.extraction import llm
+from app.extraction.local import reader as local_reader
 from app.extraction.ocr import ocr_image
 from app.extraction.pdf_text import extract_pdf_text, score_text
 from app.extraction.persist import find_duplicate, persist_invoice
 from app.extraction.rasterize import normalize_image, render_pdf_pages
 from app.ingest.storage import pages_dir_for
-from app.models import Document, DocumentPage, ExtractionRun, Invoice, ValidationFlag
-from app.validation.rules import ERROR, validate_invoice
+from app.models import (
+    Document, DocumentPage, ExtractionRun, Invoice, Party, ValidationFlag,
+)
+from app.validation.rules import ERROR, WARNING, validate_invoice
 
 log = logging.getLogger(__name__)
 
@@ -144,10 +146,12 @@ def run_extraction(
     model: str | None = None,
     pass_type: str = "primary",
 ) -> tuple[ExtractionRun, object]:
-    model = model or settings.extraction_model
+    backend = settings.extraction_backend.strip().lower()
+    local = backend == "local" and pass_type == "primary"
+    model = "local-text-layer" if local else (model or settings.extraction_model)
     run = ExtractionRun(
         document_id=document.id,
-        engine="claude",
+        engine="local" if local else "claude",
         model=model,
         pass_type=pass_type,
         status="running",
@@ -155,9 +159,17 @@ def run_extraction(
     db.add(run)
     db.flush()
 
+    if local:
+        reader = local_reader.extract_invoice
+    else:
+        # Imported only on the branch that needs it, so a local deployment
+        # never loads the API client at all.
+        from app.extraction import llm
+
+        reader = llm.extract_invoice
     try:
-        result = llm.extract_invoice(
-            model=model,
+        result = reader(
+            model=None if local else model,
             doc_path=prepared["path"],
             mime_type=document.mime_type,
             page_images=prepared["images"],
@@ -362,6 +374,8 @@ def process_document(db: Session, document_id: int) -> Invoice | None:
             invoice.status = "needs_review"
             db.flush()
 
+        _quarantine_first_from_seller(db, invoice)
+
         compute_brokerage(db, invoice)
 
         document.status = "needs_review" if invoice.needs_review else "extracted"
@@ -378,6 +392,44 @@ def process_document(db: Session, document_id: int) -> Invoice | None:
         db.flush()
         log.exception("pipeline failed for document %s", document_id)
         raise
+
+
+def _quarantine_first_from_seller(db: Session, invoice: Invoice) -> None:
+    """Hold the first bill from a seller we have never seen before.
+
+    Every rule in the validator checks a bill against itself, so a layout the
+    reader has misread in some way nothing can verify — a broker on a line we
+    do not look at, a column we mapped to the wrong field — passes cleanly.
+    The first bill from a new seller is the one moment that is cheap to catch,
+    and it costs one review per seller rather than one per bill.
+    """
+    if invoice.seller_id is None:
+        return
+    seen = db.scalar(
+        select(func.count())
+        .select_from(Invoice)
+        .where(Invoice.seller_id == invoice.seller_id, Invoice.id != invoice.id)
+    )
+    if seen:
+        return
+
+    seller = db.get(Party, invoice.seller_id)
+    name = (seller.display_name or seller.legal_name) if seller else "this seller"
+    invoice.flags.append(
+        ValidationFlag(
+            rule="first_bill_from_seller",
+            severity=WARNING,
+            field_path="seller",
+            message=(
+                f"First bill received from {name}. Check the reading against "
+                "the document once; later bills in this layout will not be "
+                "held."
+            ),
+        )
+    )
+    invoice.needs_review = True
+    invoice.status = "needs_review"
+    db.flush()
 
 
 def _find_duplicate_elsewhere(db: Session, invoice: Invoice) -> Invoice | None:

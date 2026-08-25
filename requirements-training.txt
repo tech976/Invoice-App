@@ -1,0 +1,17 @@
+# Only needed to train a recogniser on the broker's own voice, or to import an
+# Indic-tuned model. The application itself never imports any of this — see
+# requirements.txt for what actually runs on the server.
+#
+#     pip install -r requirements-training.txt
+#     python scripts/export_voice_dataset.py
+#     python scripts/finetune_speech.py --base openai/whisper-small
+#
+# Training wants a GPU (rent one for a few hours, or use Colab). The result
+# runs on the CPU VPS like any other model.
+torch>=2.2
+transformers>=4.44
+datasets>=2.20
+accelerate>=0.33
+librosa>=0.10
+evaluate>=0.4
+jiwer>=3.0

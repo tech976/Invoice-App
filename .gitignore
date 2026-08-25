@@ -2,12 +2,26 @@
 __pycache__/
 *.pyc
 .env
-data/files/
-data/pages/
-data/exports/
 *.log
 .pytest_cache/
 .DS_Store
 
-# Real bills and their printed values stay out of the repository.
+# ---------------------------------------------------------------------------
+# Nothing derived from a real bill belongs in this repository.
+#
+# The whole of data/ is excluded, not just the file store: the database itself
+# holds parties, GSTINs and figures read off third-party documents, and the
+# voice folder holds recordings of somebody speaking. Both are business
+# records, and neither is ours to publish.
+# ---------------------------------------------------------------------------
+data/
+
+# Bills dropped in for reading, and the hand transcriptions of what they say.
+Invoices/
 tests/local_bills.py
+
+# Recordings kept for measuring and teaching the recogniser.
+samples/voice/
+
+# Client documents that happen to sit in the working directory.
+Scope_of_Work*.pdf

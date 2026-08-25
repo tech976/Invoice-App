@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Teach the recogniser</h1>
+<p class="subtitle">Every recording is kept. Listen, correct what it heard, and those corrections become the examples a fine-tune learns from — his voice, his accent, his names, this market's noise.</p>
+
+<div class="card">
+  <div id="counts" class="small"></div>
+  <div class="small" style="margin-top:8px">
+    Aim for <b>300+ corrected clips</b> before fine-tuning. Below that a general
+    model is the better bet; above it, one trained on his own speech wins clearly.
+  </div>
+  <div style="margin-top:10px">
+    <button id="export">Export dataset</button>
+    <span id="export-msg" class="small"></span>
+  </div>
+</div>
+
+<div class="card pad0" style="margin-top:18px">
+  <div class="card-head">
+    <h2>Recordings</h2>
+    <select id="filter">
+      <option value="new">Not yet checked</option>
+      <option value="">All</option>
+      <option value="corrected">Corrected</option>
+      <option value="confirmed">Confirmed right</option>
+    </select>
+  </div>
+  <div class="table-wrap"><table id="clips">
+    <thead><tr><th style="width:180px">Listen</th><th>What it heard</th>
+      <th>What was actually said</th><th style="width:90px"></th></tr></thead>
+    <tbody></tbody></table></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+async function load() {
+  const status = $('#filter').value;
+  const d = await (await fetch('/api/voice/clips' + (status ? '?status='+status : ''))).json();
+  $('#counts').innerHTML =
+    `<b>${d.counts.corrected + d.counts.confirmed}</b> checked ` +
+    `(${d.counts.corrected} corrected, ${d.counts.confirmed} already right) · ` +
+    `<b>${d.counts.new}</b> waiting`;
+  $('#clips').querySelector('tbody').innerHTML = d.clips.map(c => `
+    <tr data-id="${c.id}">
+      <td><audio controls preload="none" style="width:170px"
+            src="/api/voice/clips/${c.id}/audio"></audio></td>
+      <td class="small">${c.heard || '<i>nothing</i>'}</td>
+      <td><input class="said" style="width:100%" value="${(c.said || c.heard || '').replace(/"/g,'&quot;')}"></td>
+      <td><button class="save">Save</button></td>
+    </tr>`).join('')
+    || '<tr><td colspan="4" class="small">No recordings yet. Book a few trades by voice and they will appear here.</td></tr>';
+
+  document.querySelectorAll('.save').forEach(b => b.onclick = async ev => {
+    const row = ev.target.closest('tr');
+    const said = row.querySelector('.said').value;
+    const r = await fetch('/api/voice/clips/' + row.dataset.id, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({said})});
+    if (r.ok) { ev.target.textContent = 'Saved'; setTimeout(load, 400); }
+  });
+}
+
+$('#filter').onchange = load;
+$('#export').onclick = async () => {
+  $('#export-msg').textContent = ' — run: python scripts/export_voice_dataset.py';
+};
+load();
+</script>
+{% endblock %}

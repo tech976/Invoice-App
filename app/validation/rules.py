@@ -541,6 +541,84 @@ def _check_confidence(inv, confidence: float | None) -> list[Flag]:
 # --------------------------------------------------------------------------
 
 
+# Marks an entry the reader put in `unmapped_fields` to say it saw something on
+# the page and could not file it.
+NOT_CAPTURED = "not_captured"
+
+
+def _check_completeness(inv) -> list[Flag]:
+    """Did anything printed on the bill fail to reach the ledger?
+
+    The arithmetic rules verify money and nothing else. A bill can reconcile
+    to the paisa with its transporter, its broker or its bank details missing
+    entirely, and post clean — which is exactly how a transporter-wise report
+    ends up quietly short a consignment.
+
+    So the reader records what it saw but could not file, and those gaps are
+    surfaced here as warnings. They do not block the bill; they make sure a
+    person is told rather than left to discover it in a report months later.
+    """
+    flags: list[Flag] = []
+
+    for entry in (inv.unmapped_fields or []):
+        if not isinstance(entry, dict) or entry.get("section") != NOT_CAPTURED:
+            continue
+        flags.append(
+            Flag(
+                rule="field_not_captured",
+                severity=WARNING,
+                field_path=entry.get("value") or None,
+                message=(
+                    f"The bill prints {entry.get('label', 'a value')} but it "
+                    "was not read. Nothing checks this field, so it would "
+                    "otherwise be missing without notice."
+                ),
+            )
+        )
+
+    # Structural gaps that need no knowledge of the page.
+    if inv.eway_bill_no and inv.transporter_id is None:
+        flags.append(
+            Flag(
+                rule="transporter_missing",
+                severity=WARNING,
+                field_path="transporter",
+                message=(
+                    f"e-Way bill {inv.eway_bill_no} is recorded but no "
+                    "transporter was identified, so this consignment will not "
+                    "appear in transporter-wise reporting."
+                ),
+            )
+        )
+    if inv.broker_name_raw and inv.broker_id is None:
+        flags.append(
+            Flag(
+                rule="broker_unresolved",
+                severity=WARNING,
+                field_path="broker",
+                message=(
+                    f"The bill names '{inv.broker_name_raw}' as broker but it "
+                    "was not matched to a party, so brokerage will not be "
+                    "attributed."
+                ),
+            )
+        )
+    for line in inv.lines:
+        if not (line.description or "").strip():
+            flags.append(
+                Flag(
+                    rule="line_without_description",
+                    severity=WARNING,
+                    field_path=f"lines.{line.line_no}.description",
+                    message=(
+                        f"Line {line.line_no} carries figures but no product "
+                        "name was read."
+                    ),
+                )
+            )
+    return flags
+
+
 def validate_invoice(inv, *, confidence: float | None = None) -> list[Flag]:
     """Run every rule against a persisted Invoice (with relations loaded)."""
     flags: list[Flag] = []
@@ -553,6 +631,7 @@ def validate_invoice(inv, *, confidence: float | None = None) -> list[Flag]:
     flags += _check_supply_type(inv)
     flags += _check_formats(inv)
     flags += _check_confidence(inv, confidence)
+    flags += _check_completeness(inv)
     return flags
 
 

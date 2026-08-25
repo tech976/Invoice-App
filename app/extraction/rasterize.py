@@ -36,12 +36,42 @@ def render_pdf_pages(pdf_path: Path, out_dir: Path, dpi: int | None = None) -> l
             log.error("pdftoppm failed for %s: %s", pdf_path.name, proc.stderr[:400])
     except (OSError, subprocess.SubprocessError) as exc:
         log.error("pdftoppm unavailable for %s: %s", pdf_path.name, exc)
-        return _render_with_pdf2image(pdf_path, out_dir, dpi)
+        return _render_with_pdfium(pdf_path, out_dir, dpi)
 
     pages = sorted(out_dir.glob("page-*.png"))
     if not pages:
-        return _render_with_pdf2image(pdf_path, out_dir, dpi)
+        return _render_with_pdfium(pdf_path, out_dir, dpi)
     return pages
+
+
+def _render_with_pdfium(pdf_path: Path, out_dir: Path, dpi: int) -> list[Path]:
+    """Render with pypdfium2, which ships its own PDFium and needs no poppler.
+
+    pdftoppm is faster on long documents, but it is a system package; this
+    path keeps rendering working on a machine that only has the wheels.
+    """
+    try:
+        import pypdfium2 as pdfium
+    except ImportError as exc:
+        log.error("pypdfium2 unavailable for %s: %s", pdf_path.name, exc)
+        return _render_with_pdf2image(pdf_path, out_dir, dpi)
+
+    written: list[Path] = []
+    try:
+        doc = pdfium.PdfDocument(str(pdf_path))
+        try:
+            for idx, page in enumerate(doc, start=1):
+                img = page.render(scale=dpi / 72).to_pil()
+                img.thumbnail((MAX_EDGE, MAX_EDGE))
+                target = out_dir / f"page-{idx:04d}.png"
+                img.save(target, "PNG")
+                written.append(target)
+        finally:
+            doc.close()
+    except Exception as exc:  # noqa: BLE001
+        log.error("pypdfium2 fallback failed for %s: %s", pdf_path.name, exc)
+        return written or _render_with_pdf2image(pdf_path, out_dir, dpi)
+    return written
 
 
 def _render_with_pdf2image(pdf_path: Path, out_dir: Path, dpi: int) -> list[Path]:

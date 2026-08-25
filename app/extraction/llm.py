@@ -18,6 +18,9 @@ import anthropic
 
 from app.config import settings
 from app.extraction.prompt import PROMPT_VERSION, SYSTEM_PROMPT, build_user_prompt
+from app.extraction.result import (
+    ConfigurationError, ExtractionError, ExtractionResult,
+)
 from app.schemas import ExtractedInvoice
 
 log = logging.getLogger(__name__)
@@ -28,35 +31,11 @@ MAX_PDF_PAGES = 100
 # Enough headroom that a long text layer never crowds out the pages.
 MAX_TEXT_CHARS = 120_000
 
-
-class ExtractionError(RuntimeError):
-    """A failure while reading a document.
-
-    `retryable` tells the worker whether another attempt could succeed. A rate
-    limit or a dropped connection is worth retrying; a missing API key or a
-    refused document will fail identically every time, and retrying it just
-    buries the real message under three copies of itself.
-    """
-
-    retryable = True
-
-
-class ConfigurationError(ExtractionError):
-    """Something about the setup is wrong. Retrying cannot help."""
-
-    retryable = False
-
-
-@dataclass
-class ExtractionResult:
-    invoice: ExtractedInvoice
-    model: str
-    prompt_version: str
-    input_tokens: int
-    output_tokens: int
-    duration_ms: int
-    raw: dict
-    stop_reason: str | None = None
+# Defined in `result` so the local reader can return them without
+# importing this module, and with it the API client.
+ExtractionError = ExtractionError
+ConfigurationError = ConfigurationError
+ExtractionResult = ExtractionResult
 
 
 def _client() -> anthropic.Anthropic:

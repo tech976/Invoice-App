@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Book a trade</h1>
+<p class="subtitle">Say the whole deal in one go — who sold, who bought, what, how much, at what rate. Check the fields before saving.</p>
+
+<div class="card" id="mic-card">
+  <div id="engine-note" class="small" style="margin-bottom:12px"></div>
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    <button id="rec" class="primary big-btn">🎤 Hold to speak</button>
+    <span id="rec-state" class="small">Ready</span>
+  </div>
+  <details style="margin-top:14px">
+    <summary class="small">Or type what was said</summary>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <input id="typed" placeholder="Adon se Virat ko pachas bori walnut aath sau tera mein" style="flex:1">
+      <button id="parse-typed">Read it</button>
+    </div>
+  </details>
+</div>
+
+<div class="card" id="review" style="display:none;margin-top:18px">
+  <div class="card-head"><h2>Check before saving</h2></div>
+  <p class="small" id="heard"></p>
+  <div id="fields"></div>
+  <div style="display:flex;gap:10px;margin-top:16px;align-items:center">
+    <button class="primary" id="save">Save trade</button>
+    <button id="discard">Discard</button>
+    <span id="computed" class="small"></span>
+  </div>
+</div>
+
+<div class="card pad0" style="margin-top:18px">
+  <div class="card-head"><h2>Booked today</h2><a class="small" href="/trades">All trades</a></div>
+  <div class="table-wrap"><table id="recent">
+    <thead><tr><th>Seller</th><th>Buyer</th><th>Product</th><th class="num">Qty</th>
+      <th class="num">Rate</th><th class="num">Value</th></tr></thead><tbody></tbody></table></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let current = null, recorder = null, chunks = [];
+
+const num = v => v == null ? '' : Number(v).toLocaleString('en-IN');
+
+async function boot() {
+  const st = await (await fetch('/api/voice/status')).json();
+  $('#engine-note').innerHTML = st.speech_available
+    ? `Recognition running on this server · model <b>${st.model}</b> · language ${st.language}`
+    : `<span class="warn">Speech engine not ready on the server — you can still type what was said.</span>`;
+  if (!st.speech_available) $('#rec').disabled = true;
+  loadRecent();
+}
+
+// --- recording -----------------------------------------------------------
+async function startRec() {
+  const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+  recorder = new MediaRecorder(stream);
+  chunks = [];
+  recorder.ondataavailable = e => chunks.push(e.data);
+  recorder.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop());
+    $('#rec-state').textContent = 'Listening back…';
+    const blob = new Blob(chunks, {type:'audio/webm'});
+    const fd = new FormData();
+    fd.append('audio', blob, 'clip.webm');
+    await send(fd);
+  };
+  recorder.start();
+  $('#rec-state').textContent = 'Recording — release to stop';
+}
+function stopRec() { if (recorder && recorder.state === 'recording') recorder.stop(); }
+
+['mousedown','touchstart'].forEach(e => $('#rec').addEventListener(e, ev => { ev.preventDefault(); startRec(); }));
+['mouseup','touchend','mouseleave'].forEach(e => $('#rec').addEventListener(e, ev => { ev.preventDefault(); stopRec(); }));
+
+$('#parse-typed').onclick = async () => {
+  const fd = new FormData();
+  fd.append('text', $('#typed').value);
+  await send(fd);
+};
+
+async function send(fd) {
+  try {
+    const res = await fetch('/api/voice/parse', {method:'POST', body:fd});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Could not read that');
+    current = data;
+    showReview(data);
+    $('#rec-state').textContent = `Read in ${data.duration_ms} ms`;
+  } catch (err) {
+    $('#rec-state').innerHTML = `<span class="warn">${err.message}</span>`;
+  }
+}
+
+// --- review --------------------------------------------------------------
+function showReview(d) {
+  const heardWords = g => {
+    if (!g || !g.text) return '<span class="small warn">not heard</span>';
+    if (g.snapped_from)
+      return `<span class="small">heard “${g.snapped_from}” — matched to a name you have booked before</span>`;
+    return `<span class="small">heard “${g.text}”</span>`;
+  };
+  const colour = {seller:'#2563eb', buyer:'#7c3aed', goods:'#059669',
+                  quantity:'#b45309', uom:'#b45309', rate:'#dc2626',
+                  marker:'#9ca3af', filler:'#d1d5db', ignored:'#ef4444'};
+  const chips = (d.words||[]).map(w =>
+    `<span style="border-bottom:3px solid ${colour[w.role]||'#ccc'};margin-right:7px"
+       title="${w.role}">${w.word}</span>`).join('');
+  $('#heard').innerHTML =
+    `<b>Heard:</b> ${chips}` +
+    `<div class="small" style="margin-top:6px">` +
+    Object.entries(colour).map(([k,c]) =>
+      `<span style="border-bottom:3px solid ${c};margin-right:10px">${k}</span>`).join('') +
+    `</div>` +
+    (d.clip ? `<div class="small" style="margin-top:6px">recording saved as ${d.clip}</div>` : '');
+  const val = g => g && g.value != null ? g.value : '';
+  $('#fields').innerHTML = `
+    <div class="kv"><label>Seller</label><input id="f-seller" value="${val(d.seller)}" placeholder="code or name"> ${heardWords(d.seller)}</div>
+    <div class="kv"><label>Buyer</label><input id="f-buyer" value="${val(d.buyer)}" placeholder="code or name"> ${heardWords(d.buyer)}</div>
+    <div class="kv"><label>Goods</label><input id="f-goods" value="${val(d.goods)}"> ${heardWords(d.goods)}</div>
+    <div class="kv"><label>Quantity</label>
+      <input id="f-quantity" type="number" step="0.001" value="${val(d.quantity)}">
+      <input id="f-uom" value="${val(d.uom)}" size="6"> ${heardWords(d.quantity)}</div>
+    <div class="kv"><label>Rate</label>
+      <input id="f-rate" type="number" step="0.01" value="${val(d.rate)}"> ${heardWords(d.rate)}</div>`;
+  $('#review').style.display = '';
+  ['f-quantity','f-rate'].forEach(id => $('#'+id).addEventListener('input', recompute));
+  recompute();
+}
+
+function recompute() {
+  const q = parseFloat($('#f-quantity').value), r = parseFloat($('#f-rate').value);
+  $('#computed').textContent = (isFinite(q) && isFinite(r))
+    ? `= ₹ ${num((q*r).toFixed(2))}` : '';
+}
+
+$('#discard').onclick = () => { $('#review').style.display='none'; current=null; };
+
+$('#save').onclick = async () => {
+  const body = {
+    seller: $('#f-seller').value,
+    buyer: $('#f-buyer').value,
+    goods: $('#f-goods').value,
+    quantity: parseFloat($('#f-quantity').value),
+    uom: $('#f-uom').value || null,
+    rate: parseFloat($('#f-rate').value),
+    heard: current ? current.transcript : null,
+    parsed: current,
+    source: 'voice',
+  };
+  const res = await fetch('/api/voice/trades', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const data = await res.json();
+  if (!res.ok) { $('#rec-state').innerHTML = `<span class="warn">${data.detail}</span>`; return; }
+  $('#review').style.display='none';
+  $('#rec-state').textContent = `Booked trade #${data.id} — ₹ ${num(data.value)}`;
+  loadRecent();
+};
+
+async function loadRecent() {
+  const d = await (await fetch('/api/voice/trades?limit=10')).json();
+  $('#recent').querySelector('tbody').innerHTML = d.trades.map(t => `
+    <tr><td>${t.seller||'—'}</td><td>${t.buyer||'—'}</td><td>${t.goods||'—'}</td>
+    <td class="num">${num(t.quantity)} ${t.uom||''}</td><td class="num">${num(t.rate)}</td>
+    <td class="num">${num(t.value)}</td></tr>`).join('')
+    || '<tr><td colspan="6" class="small">Nothing booked yet.</td></tr>';
+}
+boot();
+</script>
+{% endblock %}
