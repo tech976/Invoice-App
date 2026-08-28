@@ -31,15 +31,20 @@ elif ! vercel whoami >/dev/null 2>&1; then
   echo
   echo "  Not logged in, and no token given."
   echo
-  echo "  Do this once:"
-  echo "    1. Open  https://vercel.com/account/tokens"
-  echo "    2. Create Token  ->  name it 'deploy'  ->  Scope: Full Account"
-  echo "    3. Copy it, then run:"
+  echo "  Sign in first, by email — it sends you a link, so nothing has to"
+  echo "  open by itself:"
   echo
-  echo "         ./deploy-vercel.sh  PASTE_TOKEN_HERE"
+  echo "       vercel login your@email.com"
   echo
-  echo "  (Or run 'vercel login' by itself and answer its menu with the"
-  echo "   arrow keys, then run this script again with no arguments.)"
+  echo "  Click the link in the mail, then run this script again."
+  echo
+  echo "  Note: run that command yourself in Terminal. The CLI turns its own"
+  echo "  prompts off when it thinks a script is driving it, which is why"
+  echo "  plain 'vercel login' can look like it did nothing."
+  echo
+  echo "  A token works too, if you would rather:"
+  echo "       https://vercel.com/account/tokens  ->  Create Token"
+  echo "       ./deploy-vercel.sh  PASTE_TOKEN_HERE"
   exit 1
 fi
 WHO="$(vercel whoami $AUTH 2>/dev/null | tail -1)"
