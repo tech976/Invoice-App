@@ -220,11 +220,30 @@ def _join_codes(words: list[str]) -> list[str]:
         else:
             split.append(token)
 
+    def could_tail(index: int) -> bool:
+        """Are these digits a code's number rather than a quantity?
+
+        Two things say they are not. A unit after them settles it outright —
+        '1020 kg' is a weight, whatever precedes it. And a client code carries
+        two or three digits (C31, V07, K44); four is the shape of a quantity,
+        not of a code.
+
+        Without this a misheard name swallows the quantity whole: 'to Virat
+        1020 kg' came back from the recogniser as 'Tv Rat 1020 kg' and was
+        filed as a client called RAT1020, taking the weight with it.
+        """
+        token = split[index]
+        if not _CODE_TAIL_RE.match(token):
+            return False
+        if len(token.strip(".,")) > 3:
+            return False
+        following = split[index + 1] if index + 1 < len(split) else ""
+        return _word(following) not in UNITS
+
     out: list[str] = []
     i = 0
     while i < len(split):
-        if (i + 1 < len(split) and could_head(split[i])
-                and _CODE_TAIL_RE.match(split[i + 1])):
+        if i + 1 < len(split) and could_head(split[i]) and could_tail(i + 1):
             out.append(split[i] + split[i + 1].rstrip(".,"))
             i += 2
             continue

@@ -193,3 +193,56 @@ def test_goods_are_filed_in_english(said, expected):
 def test_an_unknown_word_is_left_as_it_was_said():
     """More likely a name or a commodity not listed than a mistake to hide."""
     assert translate.term("Zephyrix") == "Zephyrix"
+
+
+# --------------------------------------------------------------------------
+# Codes, and what is not one
+# --------------------------------------------------------------------------
+
+
+def test_a_split_code_is_joined():
+    """'C 31' is one code, however the recogniser spaced it."""
+    from app.voice.parse import _join_codes
+    assert _join_codes("C 31 to V 07 fifty bags".split()) == [
+        "C31", "to", "V07", "fifty", "bags"]
+
+
+@pytest.mark.parametrize("said", [
+    "C-31 to V-07, fifty bags walnut at eight thirteen",
+    "C 31 to V 07, fifty bags walnut at eight thirteen",
+    "C31 to V07, fifty bags walnut at eight thirteen",
+])
+def test_a_code_is_filed_the_same_however_it_was_written(said):
+    """Hyphenated, spaced or joined, it is the same client."""
+    got = read(said)
+    assert (got["seller"], got["buyer"]) == ("C31", "V07")
+
+
+@pytest.mark.parametrize("said", [
+    # A quantity, because a unit follows it.
+    "Tv Rat 1020 kg almond",
+    "Rat 50 bags walnut",
+    # Four digits is the shape of a quantity, not of a client code.
+    "Rat 1020 almond",
+])
+def test_a_quantity_is_never_swallowed_into_a_code(said):
+    """'to Virat 1020 kg' came back as 'Tv Rat 1020 kg' and was filed as a
+    client called RAT1020, taking the weight with it."""
+    from app.voice.parse import _join_codes
+    assert not any(len(w) > 4 and w.isupper() and w[-4:].isdigit()
+                   for w in _join_codes(said.split()))
+
+
+def test_a_misheard_marker_still_yields_the_quantity():
+    """The whole sentence, as the recogniser actually returned it."""
+    got = read("Micron Tv Rat 1020 kg almond at seven ninety three")
+    assert got["quantity"] == 1020
+    assert got["uom"] == "KGS"
+    assert got["rate"] == 793
+
+
+def test_parties_are_read_without_a_marker():
+    """A recogniser routinely swallows the 'to'. Order still carries it."""
+    got = read("Ashapura Shaan 33 bags cashew at twelve fifty")
+    assert got["seller"] == "Ashapura"
+    assert got["buyer"] == "Shaan"
