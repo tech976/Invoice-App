@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Invoice #2 · Invoice Ledger</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧾</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Invoice<span>Ledger</span></div>
+  <nav class="main">
+    <a href="/" class="">Dashboard</a>
+    <a href="/upload" class="">Upload</a>
+    
+    <a href="/invoices" class="active">Invoices</a>
+    <a href="/review" class="">Review</a>
+    <a href="/parties" class="">Parties</a>
+    <a href="/reports" class="">Reports</a>
+  </nav>
+  <div class="meta" id="topmeta"></div>
+</header>
+
+<main class="">
+  
+<div id="head"></div>
+
+<div class="split" style="margin-top:20px">
+
+  <!-- ---------- left: the form ---------- -->
+  <div>
+    <div class="card" id="flags-card" style="display:none">
+      <h3>Checks</h3>
+      <div id="flags"></div>
+    </div>
+
+    <div class="card pad0">
+      <div class="card-head">
+        <h2>Invoice details</h2>
+        <button class="primary small" id="save" disabled>Save changes</button>
+      </div>
+      <div style="padding:22px 24px" id="fields"></div>
+    </div>
+
+    <div class="card pad0">
+      <div class="card-head">
+        <h2>Line items</h2>
+        <span class="faint" id="line-count"></span>
+      </div>
+      <div style="padding:18px 20px" id="lines"></div>
+    </div>
+
+    <div class="card pad0" id="charges-card" style="display:none">
+      <div class="card-head"><h2>Charges &amp; deductions</h2></div>
+      <div class="table-wrap"><table id="charges"></table></div>
+    </div>
+
+    <div class="card pad0" id="tax-card" style="display:none">
+      <div class="card-head"><h2>Tax summary</h2><span class="faint">HSN-wise</span></div>
+      <div class="table-wrap"><table id="taxrows"></table></div>
+    </div>
+
+    <div class="card" id="eway-card" style="display:none">
+      <h3>e-Way bill</h3>
+      <div id="eway"></div>
+    </div>
+
+    <div class="card" id="extra-card" style="display:none">
+      <h3>Other printed details</h3>
+      <p class="faint" style="margin:-6px 0 14px">
+        Captured from the bill but outside the standard fields.</p>
+      <div id="extra"></div>
+    </div>
+  </div>
+
+  <!-- ---------- right: summary rail ---------- -->
+  <div class="rail">
+    <div class="card" id="summary-card"></div>
+    <div class="card" id="parties-card"></div>
+    <div class="card pad0" id="doc-card">
+      <div class="card-head">
+        <h2>Original bill</h2>
+        <a class="btn small" id="doc-open" target="_blank">Open</a>
+      </div>
+      <div style="padding:12px">
+        <div class="viewer" id="viewer"></div>
+        <p class="faint" id="doc-meta" style="margin:10px 2px 0"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<div id="toast"></div>
+<script src="/static/app.js"></script>
+<script>
+  api('/api/health').then(h => {
+    document.getElementById('topmeta').innerHTML = h.api_key_configured
+      ? esc(h.model)
+      : '<span class="badge err">no API key &mdash; set ANTHROPIC_API_KEY in .env</span>';
+  }).catch(() => {});
+</script>
+
+<script>
+const INVOICE_ID = 2;
+let inv = null;
+const dirty = {};
+
+/* ---------------- field builders ---------------- */
+
+function input(field, value, { type = 'text', cls = '', unit = null, ph = '', fmt = null } = {}) {
+  const v = fmt ? fmtField(value, fmt)
+                : (value === null || value === undefined ? '' : value);
+  const box = `<input data-field="${field}" type="${type}" class="${cls}"
+                 placeholder="${esc(ph)}" value="${esc(v)}">`;
+  return unit ? `<div class="input-unit">${box}<span class="unit">${esc(unit)}</span></div>` : box;
+}
+
+/* Shorthands so every amount box is formatted the same way. */
+const cash = (label, name, value, opts = {}) =>
+  field(label, name, value, { cls: 'num', fmt: 'money', ...opts });
+const count = (label, name, value, opts = {}) =>
+  field(label, name, value, { cls: 'num', fmt: 'qty', ...opts });
+
+function field(label, name, value, opts = {}) {
+  const optional = opts.optional ? ' <span class="opt">(optional)</span>' : '';
+  return `<label class="field"><span class="lab">${esc(label)}${optional}</span>
+            ${input(name, value, opts)}</label>`;
+}
+
+function readOnly(label, html) {
+  return `<label class="field"><span class="lab">${esc(label)}</span>
+    <div style="padding:9px 0;font-size:14px;font-weight:500;color:var(--text)">
+      ${html || '<span class="muted">—</span>'}</div></label>`;
+}
+
+function markDirty(el) {
+  dirty[el.dataset.field] = el.value;
+  el.classList.add('dirty');
+  document.getElementById('save').disabled = false;
+}
+
+/* ---------------- render ---------------- */
+
+function renderHead() {
+  const open = inv.flags.filter(f => !f.resolved);
+  document.getElementById('head').innerHTML = `
+    <div class="page-head">
+      <div>
+        <h1>${esc(inv.invoice_number || '(no invoice number)')}</h1>
+        <p class="subtitle mb0">
+          ${dmy(inv.invoice_date)}
+          &nbsp;·&nbsp; ${partyLink(inv.seller)} → ${partyLink(inv.buyer)}
+          &nbsp;·&nbsp; <strong style="color:var(--text)">${rupees(inv.grand_total)}</strong>
+        </p>
+        <div class="actions" style="margin-top:10px">
+          ${statusBadge(inv.status)}
+          ${!open.length ? '<span class="badge ok">all checks passed</span>' : ''}
+          ${inv.confidence != null
+            ? `<span class="badge mute plain">read at ${(inv.confidence * 100).toFixed(0)}% confidence</span>` : ''}
+          ${inv.vendor_format_hint
+            ? `<span class="badge mute plain">${esc(inv.vendor_format_hint)}</span>` : ''}
+        </div>
+      </div>
+      <div class="actions">
+        ${inv.status === 'confirmed'
+          ? '<button onclick="reopen()">Reopen</button>'
+          : '<button class="primary" onclick="confirmInvoice()">Confirm invoice</button>'}
+        <button onclick="reread()">Re-read bill</button>
+        <button class="danger" onclick="removeInvoice()">Delete</button>
+      </div>
+    </div>`;
+}
+
+function renderFlags() {
+  const card = document.getElementById('flags-card');
+  if (!inv.flags.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  document.getElementById('flags').innerHTML = inv.flags.map(f => `
+    <div class="flag ${f.severity} ${f.resolved ? 'resolved' : ''}">
+      <div class="msg">${esc(f.message)}</div>
+      <div class="rule">${esc(f.rule)}${f.field_path ? ' · ' + esc(f.field_path) : ''}${
+        f.expected ? ` · expected ${esc(f.expected)}, read ${esc(f.actual)}` : ''}</div>
+      ${f.resolved
+        ? '<div class="rule">accepted as correct</div>'
+        : `<div class="actions"><button class="small" onclick="resolveFlag(${f.id})">Accept as correct</button></div>`}
+    </div>`).join('');
+}
+
+function renderFields() {
+  const el = document.getElementById('fields');
+  el.innerHTML = `
+    <div class="grid c3">
+      ${field('Invoice number', 'invoice_number', inv.invoice_number)}
+      ${field('Invoice date', 'invoice_date', inv.invoice_date, { type: 'date' })}
+      ${field('Due date', 'due_date', inv.due_date, { type: 'date' })}
+      ${field('Broker', 'broker_name_raw', inv.broker_name_raw, { ph: 'Not named on the bill' })}
+      ${field('Payment terms', 'payment_terms', inv.payment_terms, { ph: 'e.g. 30 Days' })}
+      ${readOnly('Supply type', inv.supply_type
+        ? `${esc(inv.supply_type)}-state <span class="faint">(${inv.supply_type === 'intra' ? 'CGST + SGST' : 'IGST'})</span>`
+        : null)}
+      ${field('Place of supply', 'place_of_supply', inv.place_of_supply)}
+      ${field('e-Way bill no', 'eway_bill_no', inv.eway_bill_no)}
+      ${field('Vehicle no', 'vehicle_no', inv.vehicle_no)}
+    </div>
+
+    <hr class="divider">
+
+    <h3>e-Invoice &amp; references</h3>
+    <div class="grid c3">
+      ${field('IRN', 'irn', inv.irn, { optional: true })}
+      ${field('Ack no', 'ack_no', inv.ack_no, { optional: true })}
+      ${field('PO number', 'po_number', inv.po_number, { optional: true })}
+    </div>
+
+    <hr class="divider">
+
+    <h3>Amounts as printed</h3>
+    <div class="grid c4">
+      ${count('Total quantity', 'total_quantity', inv.total_quantity, { unit: inv.total_quantity_uom || '' })}
+      ${count('Total bags', 'total_bags', inv.total_bags)}
+      ${cash('Subtotal', 'subtotal', inv.subtotal)}
+      ${cash('Discount', 'discount_total', inv.discount_total)}
+      ${cash('Taxable value', 'taxable_value', inv.taxable_value)}
+      ${cash('CGST', 'cgst_amount', inv.cgst_amount)}
+      ${cash('SGST', 'sgst_amount', inv.sgst_amount)}
+      ${cash('IGST', 'igst_amount', inv.igst_amount)}
+      ${cash('Cess', 'cess_amount', inv.cess_amount)}
+      ${cash('TCS', 'tcs_amount', inv.tcs_amount)}
+      ${cash('Other charges', 'other_charges', inv.other_charges)}
+      ${cash('Round off', 'round_off', inv.round_off)}
+      ${cash('Grand total', 'grand_total', inv.grand_total)}
+    </div>
+    ${inv.amount_in_words
+      ? `<p class="hint">In words: ${esc(inv.amount_in_words)}</p>` : ''}
+
+    ${(inv.bank_name || inv.bank_account_no || inv.remarks) ? '<hr class="divider">' : ''}
+    ${(inv.bank_name || inv.bank_account_no) ? `
+      <h3>Seller's bank</h3>
+      <dl class="kv" style="margin-bottom:14px">
+        ${inv.bank_name ? `<dt>Bank</dt><dd>${esc(inv.bank_name)}</dd>` : ''}
+        ${inv.bank_account_no ? `<dt>Account</dt><dd class="mono">${esc(inv.bank_account_no)}</dd>` : ''}
+        ${inv.bank_ifsc ? `<dt>IFSC</dt><dd class="mono">${esc(inv.bank_ifsc)}</dd>` : ''}
+        ${inv.bank_branch ? `<dt>Branch</dt><dd>${esc(inv.bank_branch)}</dd>` : ''}
+      </dl>` : ''}
+    ${inv.remarks ? `<h3>Remarks</h3><p class="faint" style="margin:0">${esc(inv.remarks)}</p>` : ''}`;
+
+  el.querySelectorAll('input[data-field]').forEach(i =>
+    i.addEventListener('change', () => markDirty(i)));
+}
+
+/* Each line renders as its own card with tabs, mirroring the item-package
+   pattern: the goods detail on one tab, its tax breakdown on the other. */
+function renderLines() {
+  document.getElementById('line-count').textContent =
+    `${inv.lines.length} item${inv.lines.length === 1 ? '' : 's'}`;
+
+  document.getElementById('lines').innerHTML = inv.lines.map(l => `
+    <div class="item" data-line="${l.id}">
+      <div class="item-head">
+        <div class="thumb">${esc(initials(l.description))}</div>
+        <div class="body">
+          <div class="title">${esc(l.description || '(no description)')}</div>
+          <div class="meta">
+            ${l.item_remarks ? esc(l.item_remarks) + ' · ' : ''}
+            ${l.hsn ? 'HSN ' + esc(l.hsn) : 'no HSN'}
+            ${l.item_code ? ' · ' + esc(l.item_code) : ''}
+            ${l.brand ? ' · ' + esc(l.brand) : ''}
+          </div>
+          ${l.product ? `<div class="meta">→ ${esc(l.product)}</div>` : ''}
+        </div>
+        <div class="trail">
+          <div class="faint">Line total</div>
+          <div style="font-size:15px;font-weight:640;color:var(--text)">${rupees(l.taxable_amount)}</div>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" data-pane="goods">Item details</button>
+        <button class="tab" data-pane="tax">Tax breakdown</button>
+      </div>
+
+      <div data-pane-body="goods">
+        <div class="grid c3">
+          ${field('Description', 'description', l.description)}
+          ${field('Grade / remarks', 'item_remarks', l.item_remarks)}
+          ${field('HSN / SAC', 'hsn', l.hsn)}
+        </div>
+        <div class="grid c4">
+          ${count('Bags', 'bags', l.bags)}
+          ${count('Quantity', 'quantity', l.quantity)}
+          ${field('Unit', 'uom', l.uom)}
+          ${cash('Rate', 'rate', l.rate)}
+        </div>
+        <div class="grid c3">
+          ${field('Discount', 'discount_pct', l.discount_pct, { cls: 'num', unit: '%' })}
+          ${cash('Discount amount', 'discount_amount', l.discount_amount)}
+          ${cash('Taxable amount', 'taxable_amount', l.taxable_amount)}
+        </div>
+      </div>
+
+      <div data-pane-body="tax" style="display:none">
+        <div class="grid c4">
+          ${field('Tax rate', 'tax_rate', l.tax_rate, { cls: 'num', unit: '%' })}
+          ${cash('CGST', 'cgst_amount', l.cgst_amount)}
+          ${cash('SGST', 'sgst_amount', l.sgst_amount)}
+          ${cash('IGST', 'igst_amount', l.igst_amount)}
+        </div>
+        <div class="grid c3">
+          ${field('Item code', 'item_code', l.item_code)}
+          ${field('Brand', 'brand', l.brand)}
+          ${cash('Line total', 'line_total', l.line_total)}
+        </div>
+      </div>
+    </div>`).join('') || '<div class="empty">No line items were read from this bill.</div>';
+
+  // Tab switching, scoped to each card.
+  document.querySelectorAll('#lines .tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const card = tab.closest('.item');
+      card.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === tab));
+      card.querySelectorAll('[data-pane-body]').forEach(p => {
+        p.style.display = p.dataset.paneBody === tab.dataset.pane ? '' : 'none';
+      });
+    });
+  });
+
+  // Line edits save immediately — there is no batch to hold them.
+  document.querySelectorAll('#lines input[data-field]').forEach(el => {
+    el.addEventListener('change', async () => {
+      const lineId = el.closest('[data-line]').dataset.line;
+      el.classList.add('dirty');
+      try {
+        const r = await api(`/api/invoices/${INVOICE_ID}/lines/${lineId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ [el.dataset.field]: el.value }),
+        });
+        inv = { ...r.invoice, document: inv.document, brokerage: inv.brokerage };
+        el.classList.remove('dirty');
+        toast('Line updated', 'ok');
+        renderHead(); renderFlags(); renderSummary();
+      } catch (e) { toast(e.message, 'err'); }
+    });
+  });
+}
+
+function renderSummary() {
+  const rows = [
+    ['Subtotal', rupees(inv.subtotal), ''],
+    ['Discount', rupees(inv.discount_total), inv.discount_total ? 'neg' : ''],
+    ['Taxable value', rupees(inv.taxable_value), ''],
+    ['CGST', rupees(inv.cgst_amount), ''],
+    ['SGST', rupees(inv.sgst_amount), ''],
+    ['IGST', rupees(inv.igst_amount), ''],
+    ['Cess', rupees(inv.cess_amount), ''],
+    ['TCS', rupees(inv.tcs_amount), ''],
+    ['Other charges', rupees(inv.other_charges), ''],
+    ['Round off', rupees(inv.round_off), ''],
+  ].filter(([, v]) => v !== '—');
+
+  document.getElementById('summary-card').innerHTML = `
+    <h2>Summary</h2>
+    ${rows.map(([k, v, cls]) => summaryRow(k, v, cls)).join('')}
+    ${summaryRow('Total', rupees(inv.grand_total), 'total')}
+    ${inv.brokerage ? `
+      <hr class="divider">
+      <h3>Brokerage</h3>
+      ${summaryRow(
+        inv.brokerage.rate_pct != null
+          ? `${inv.brokerage.rate_pct}% of ${rupees(inv.brokerage.basis_amount)}`
+          : 'Accrued',
+        rupees(inv.brokerage.amount))}
+      <p class="hint">Payable by the ${esc(inv.brokerage.payable_by || 'seller')},
+        settled at year end. Status: ${esc(inv.brokerage.status)}.</p>` : ''}
+    ${inv.amount_in_words
+      ? `<p class="hint" style="margin-top:14px">${esc(inv.amount_in_words)}</p>` : ''}`;
+}
+
+function addressBlock(role, p, extra = '') {
+  if (!p) return '';
+  return `
+    <div style="margin-bottom:16px">
+      <h3 style="margin-bottom:6px">${esc(role)}</h3>
+      <div class="address">
+        <strong>${p.id ? `<a href="/parties/${p.id}">${esc(p.name)}</a>` : esc(p.name)}</strong>
+        ${p.gstin ? `<span class="mono">${esc(p.gstin)}</span><br>` : ''}
+        ${[p.city, p.state_name].filter(Boolean).map(esc).join(', ')}
+        ${extra}
+      </div>
+    </div>`;
+}
+
+function renderParties() {
+  document.getElementById('parties-card').innerHTML =
+    addressBlock('Seller', inv.seller) +
+    addressBlock('Buyer', inv.buyer) +
+    (inv.consignee ? addressBlock('Ship to', inv.consignee) : '') +
+    (inv.transporter ? addressBlock('Transporter', inv.transporter,
+      inv.vehicle_no ? `<br><span class="faint">Vehicle ${esc(inv.vehicle_no)}</span>` : '') : '') +
+    (inv.broker || inv.broker_name_raw
+      ? addressBlock('Broker', inv.broker || { name: inv.broker_name_raw }) : '');
+}
+
+function renderDoc() {
+  const d = inv.document;
+  document.getElementById('doc-open').href = `/api/documents/${d.id}/file`;
+  document.getElementById('viewer').innerHTML =
+    d.mime_type === 'application/pdf'
+      ? `<iframe src="/api/documents/${d.id}/file#view=FitH" title="Original bill"></iframe>`
+      : `<img src="/api/documents/${d.id}/file" alt="Original bill">`;
+  document.getElementById('doc-meta').innerHTML =
+    `${esc(d.filename)} · ${d.page_count || '?'} page(s)` +
+    (d.extraction_route ? ` · read via ${esc(d.extraction_route.replace('_', ' '))}` : '') +
+    (d.text_quality != null ? ` · text layer ${d.text_quality.toFixed(2)}` : '');
+}
+
+/* ---------------- actions ---------------- */
+
+async function load() {
+  inv = await api('/api/invoices/' + INVOICE_ID);
+  renderHead(); renderFlags(); renderFields(); renderLines();
+  renderSummary(); renderParties(); renderDoc();
+  renderCharges(); renderTaxRows(); renderEway(); renderExtra();
+}
+
+function renderCharges() {
+  if (!inv.charges.length) return;
+  document.getElementById('charges-card').style.display = '';
+  document.getElementById('charges').innerHTML = `
+    <thead><tr><th>Label</th><th>Kind</th><th>HSN</th><th class="num">Amount</th></tr></thead>
+    <tbody>${inv.charges.map(c => `
+      <tr><td><strong>${esc(c.label)}</strong></td>
+        <td><span class="badge mute plain">${esc(c.kind.replace('_', ' '))}</span></td>
+        <td class="mono">${esc(c.hsn || '—')}</td>
+        <td class="num">${rupees(c.amount)}</td></tr>`).join('')}</tbody>`;
+}
+
+function renderTaxRows() {
+  if (!inv.tax_rows.length) return;
+  document.getElementById('tax-card').style.display = '';
+  document.getElementById('taxrows').innerHTML = `
+    <thead><tr><th>HSN</th><th class="num">Taxable</th>
+      <th class="num">CGST %</th><th class="num">CGST</th>
+      <th class="num">SGST %</th><th class="num">SGST</th>
+      <th class="num">IGST %</th><th class="num">IGST</th>
+      <th class="num">Total tax</th></tr></thead>
+    <tbody>${inv.tax_rows.map(r => `
+      <tr><td class="mono">${esc(r.hsn || '—')}</td>
+        <td class="num">${money(r.taxable_value)}</td>
+        <td class="num">${num(r.cgst_rate)}</td><td class="num">${money(r.cgst_amount)}</td>
+        <td class="num">${num(r.sgst_rate)}</td><td class="num">${money(r.sgst_amount)}</td>
+        <td class="num">${num(r.igst_rate)}</td><td class="num">${money(r.igst_amount)}</td>
+        <td class="num">${money(r.total_tax)}</td></tr>`).join('')}</tbody>`;
+}
+
+function renderEway() {
+  const e = inv.eway_bill;
+  if (!e) return;
+  document.getElementById('eway-card').style.display = '';
+  const rows = [
+    ['e-Way bill no', e.eway_bill_no], ['Generated', dmy(e.generated_date)],
+    ['Valid upto', dmy(e.valid_upto)], ['Mode', e.mode],
+    ['Distance', e.approx_distance_km ? e.approx_distance_km + ' km' : null],
+    ['Vehicle', e.vehicle_no], ['From', e.vehicle_from],
+    ['Transporter', e.transporter_name], ['Transporter ID', e.transporter_id_no],
+    ['Transaction type', e.transaction_type],
+    ['Dispatch from', e.dispatch_from], ['Ship to', e.ship_to],
+  ].filter(([, v]) => v);
+  document.getElementById('eway').innerHTML =
+    `<dl class="kv">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
+}
+
+function renderExtra() {
+  const extra = inv.unmapped_fields || [];
+  if (!extra.length) return;
+  document.getElementById('extra-card').style.display = '';
+  document.getElementById('extra').innerHTML =
+    `<dl class="kv">${extra.map(u =>
+      `<dt>${esc(u.label)}</dt><dd>${esc(u.value)}${
+        u.section ? ` <span class="faint">(${esc(u.section)})</span>` : ''}</dd>`).join('')}</dl>`;
+}
+
+document.getElementById('save').onclick = async () => {
+  const btn = document.getElementById('save');
+  btn.disabled = true;
+  try {
+    const r = await api('/api/invoices/' + INVOICE_ID, {
+      method: 'PATCH', body: JSON.stringify(dirty),
+    });
+    toast(r.updated.length ? `Saved ${r.updated.length} field(s)` : 'Nothing changed', 'ok');
+    Object.keys(dirty).forEach(k => delete dirty[k]);
+    await load();
+  } catch (e) { toast(e.message, 'err'); btn.disabled = false; }
+};
+
+async function resolveFlag(id) {
+  try {
+    await api(`/api/invoices/${INVOICE_ID}/flags/${id}/resolve`, { method: 'POST', body: '{}' });
+    await load();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function confirmInvoice(force = false) {
+  try {
+    await api(`/api/invoices/${INVOICE_ID}/confirm`, {
+      method: 'POST', body: JSON.stringify({ force }),
+    });
+    toast('Invoice confirmed', 'ok');
+    await load();
+  } catch (e) {
+    if (!force && confirm(e.message + '\n\nConfirm anyway?')) return confirmInvoice(true);
+    toast(e.message, 'err');
+  }
+}
+
+async function reopen() {
+  try { await api(`/api/invoices/${INVOICE_ID}/reopen`, { method: 'POST' }); await load(); }
+  catch (e) { toast(e.message, 'err'); }
+}
+
+async function reread() {
+  if (!confirm('Read this bill again? The current extraction will be replaced.')) return;
+  try {
+    await api(`/api/documents/${inv.document.id}/reprocess`, { method: 'POST' });
+    toast('Queued — reload in a few seconds', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function removeInvoice() {
+  const seller = (inv.seller && inv.seller.name) || 'unknown seller';
+  const buyer  = (inv.buyer && inv.buyer.name) || 'unknown buyer';
+  const detail = `
+    <b>${esc(inv.invoice_number || 'no number')}</b> &middot; ${dmy(inv.invoice_date)}<br>
+    ${esc(seller)} &rarr; ${esc(buyer)}<br>
+    ${rupees(inv.grand_total)}${inv.document ? ` &middot; ${esc(inv.document.filename)}` : ''}`;
+
+  const scope = await confirmDialog({
+    title: 'Delete this invoice?',
+    message: 'Choose how much of it to remove. This cannot be undone.',
+    detail,
+    choices: [
+      { value: 'bill', label: 'Delete the invoice and the uploaded bill',
+        hint: 'Gone from the ledger. The original file stays on disk.' },
+      { value: 'reading', label: 'Delete only what was read from it',
+        hint: 'Keeps the bill so it can be read again — use this when the reading was wrong.' },
+      { value: 'purge', label: 'Delete everything, including the stored file',
+        hint: 'Nothing is left. Use only if the bill should never have been uploaded.' },
+    ],
+    warning: inv.status === 'confirmed'
+      ? 'This invoice is confirmed — its brokerage may already be accrued and reported.'
+      : '',
+    confirmLabel: 'Delete',
+  });
+  if (!scope) return;
+
+  try {
+    const r = await api(`/api/invoices/${INVOICE_ID}?scope=${scope}`, { method: 'DELETE' });
+    if (scope === 'reading') {
+      toast('Reading deleted — the bill can be read again', 'ok');
+      return load();
+    }
+    location = '/invoices';
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+load().catch(e => {
+  document.getElementById('head').innerHTML = `<div class="card"><div class="empty">${esc(e.message)}</div></div>`;
+});
+</script>
+
+</body>
+</html>

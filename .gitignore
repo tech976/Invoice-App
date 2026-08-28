@@ -17,7 +17,10 @@ __pycache__/
 data/
 
 # Bills dropped in for reading, and the hand transcriptions of what they say.
-Invoices/
+# Anchored to the root: unanchored it also matched public/invoices/, and on a
+# case-insensitive filesystem public/api/invoices/ with it, which quietly kept
+# the invoice screens out of the built demo.
+/Invoices/
 tests/local_bills.py
 
 # Recordings kept for measuring and teaching the recogniser.
