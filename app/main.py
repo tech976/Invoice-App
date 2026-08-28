@@ -39,10 +39,12 @@ async def lifespan(app: FastAPI):
         if recovered:
             log.info("requeued %s job(s) orphaned by a previous shutdown", recovered)
         start_workers()
-    if not settings.anthropic_api_key:
+    if not settings.anthropic_api_key and settings.extraction_backend != "local":
         log.warning(
-            "ANTHROPIC_API_KEY is not set — uploads will queue but extraction "
-            "will fail. Add the key to .env and restart."
+            "ANTHROPIC_API_KEY is not set and EXTRACTION_BACKEND is '%s' — "
+            "uploads will queue but extraction will fail. Add the key, or set "
+            "EXTRACTION_BACKEND=local to read bills on this machine.",
+            settings.extraction_backend,
         )
     log.info("ready on http://127.0.0.1:8000")
     yield

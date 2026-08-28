@@ -154,9 +154,49 @@ class Settings(BaseSettings):
         return Path("/tmp/invoice-app") if self.serverless else self.data_dir
 
 
+# The names a hosted Postgres adds to the environment by itself. Vercel,
+# Render, Railway and Heroku each pick a different one, and none of them is
+# DATABASE_URL in the form SQLAlchemy wants.
+_HOSTED_DB_VARS = (
+    "DATABASE_URL", "POSTGRES_URL", "POSTGRES_PRISMA_URL",
+    "POSTGRES_URL_NON_POOLING", "POSTGRES_URL_NO_SSL",
+)
+
+
+def _sqlalchemy_url(raw: str) -> str:
+    """Rewrite a hosted database URL into the form SQLAlchemy expects.
+
+    A provider hands out `postgres://user:pass@host/db`, which SQLAlchemy
+    refuses outright, or `postgresql://...`, which it accepts but then tries
+    to open with psycopg2 — a driver this project does not install. Naming
+    the driver is what makes either of them work.
+    """
+    for prefix in ("postgres://", "postgresql://"):
+        if raw.startswith(prefix):
+            return "postgresql+psycopg://" + raw[len(prefix):]
+    return raw
+
+
+def _discover_database_url() -> str | None:
+    """The database this host has already provisioned, if it has.
+
+    Attaching a Postgres in the Vercel dashboard sets these automatically, so
+    there is nothing to copy, paste or correct by hand — which is the whole
+    difference between a two-click setup and a ten-step one.
+    """
+    for name in _HOSTED_DB_VARS:
+        value = (os.environ.get(name) or "").strip()
+        if value:
+            return _sqlalchemy_url(value)
+    return None
+
+
 @lru_cache
 def get_settings() -> Settings:
     s = Settings()
+    found = _discover_database_url()
+    if found:
+        s.database_url = found
     s.ensure_dirs()
     return s
 
