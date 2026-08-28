@@ -1,15 +1,42 @@
-.venv/
+# Everything that is not the running application.
+#
+# Two of these matter more than tidiness. The root requirements.txt pulls in
+# faster-whisper, torch and scipy — some 800 MB that this host has no use for
+# and no room for — and the Python builder will use it if it finds it, so it
+# is kept out and api/requirements.txt is the only one left to find. And the
+# markdown files name real sellers and buyers, which is nobody's business at
+# a public URL.
+
+# --- never publish: third-party business records ---
 data/
 Invoices/
 samples/
 tests/
-scripts/
-*.pdf
 .env
-__pycache__/
-# The voice stack does not ship to this host.
+*.pdf
+
+# --- the voice stack does not run on this host ---
 app/voice/
 app/api/voice.py
 app/templates/speak.html
 app/templates/training.html
 app/templates/trades.html
+
+# --- would shadow api/requirements.txt and blow the bundle ---
+requirements.txt
+requirements-training.txt
+
+# --- documentation, naming real parties ---
+README.md
+EXTRACTION_PLAN.md
+DEPLOY-VERCEL.md
+
+# --- local junk ---
+.venv/
+.DS_Store
+.pytest_cache/
+__pycache__/
+*.pyc
+.gitignore
+run.sh
+scripts/
