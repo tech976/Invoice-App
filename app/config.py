@@ -59,13 +59,34 @@ class Settings(BaseSettings):
     # Devanagari, so names are stored in that script.
     speech_language: str = ""
     max_audio_mb: int = 10
-    # A wider beam is slower and more accurate. Five is Whisper's default;
-    # these clips are short enough that ten is affordable.
-    speech_beam_size: int = 10
+    # Measured on this pipeline, a wider beam bought no accuracy on a
+    # five-second utterance and cost 0.6s of it. Greedy decoding it is.
+    speech_beam_size: int = 1
     # Filter, denoise and level the recording before the model hears it. A
     # market floor is noisy and this costs milliseconds; measure it off and on
     # with scripts/bench_speech.py on your own recordings before trusting it.
-    speech_clean_audio: bool = True
+    # Off by default: measured on and off it changed no field on any clip,
+    # and it costs time on every one. Turn it on if a real market recording
+    # shows it earning its keep — scripts/bench_speech.py --clean both.
+    speech_clean_audio: bool = False
+    # How many cores the models may use. Left below the core count on
+    # purpose: the web server still has to answer while one is running.
+    cpu_threads: int = 4
+
+    # --- local language model -------------------------------------------
+    # Ollama on this machine. It binds to localhost and the weights are a
+    # file on disk, so nothing leaves the server.
+    ollama_url: str = "http://127.0.0.1:11434"
+    nlp_model: str = "qwen2.5:3b-instruct-q4_K_M"
+    # A trade is a small object. Capping the reply is what keeps a confused
+    # model from spending half a minute on it.
+    nlp_max_tokens: int = 160
+    nlp_timeout: float = 60.0
+    # How long Ollama holds the model in memory after a request.
+    nlp_keep_alive: str = "30m"
+    # 'llm' reads the sentence with the model; 'rules' uses the parser beside
+    # it, which is instant but only knows the words it was given.
+    nlp_backend: str = "llm"
 
     # --- pipeline -------------------------------------------------------
     worker_threads: int = 2

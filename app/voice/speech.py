@@ -51,6 +51,10 @@ def _whisper():
     try:
         return WhisperModel(
             settings.speech_model, device="cpu", compute_type="int8",
+            # Left below the core count so the web server still has a core to
+            # answer on while a recording is being read.
+            cpu_threads=settings.cpu_threads,
+            num_workers=1,
             local_files_only=True,
         )
     except Exception as exc:  # noqa: BLE001 - almost always a missing model
@@ -89,9 +93,26 @@ def transcribe(audio_path: Path, learned: tuple[str, ...] = (),
         with NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             cleaned = Path(tmp.name)
         audio_path = clean(audio_path, cleaned)
+    # Which language this is decides which vocabulary helps. Detected once,
+    # from audio decoded once, and then reused for the decode itself.
+    from faster_whisper import decode_audio
+
+    try:
+        samples = decode_audio(str(audio_path), sampling_rate=16_000)
+        detected, probability, _ = model.detect_language(audio=samples)
+    except Exception as exc:  # noqa: BLE001 - fall back to letting it decide
+        log.debug("language detection failed (%s); letting the decoder choose", exc)
+        samples, detected, probability = str(audio_path), None, 0.0
+
+    # The detected language chooses the vocabulary, but is not passed to the
+    # decoder. Told it is listening to Hindi, Whisper writes Devanagari;
+    # left to itself with romanised hints it writes Latin, which is both what
+    # the book keeps and what survives transcription intact.
+    language = settings.speech_language or None
+
     def run(language: str | None):
         return model.transcribe(
-            str(audio_path),
+            samples,
             language=language,
         task="transcribe",
         # A trade is one short sentence, so there is no previous text worth
@@ -100,22 +121,23 @@ def transcribe(audio_path: Path, learned: tuple[str, ...] = (),
         condition_on_previous_text=False,
         # Told what a sauda sounds like, the decoder is far better at the
         # words that matter: the units, the commodities and the codes.
-        initial_prompt=vocabulary.initial_prompt(learned),
-        hotwords=" ".join((vocabulary.hotwords(), *learned)),
+        initial_prompt=vocabulary.initial_prompt(learned, language),
+        hotwords=" ".join((vocabulary.hotwords(language), *learned)),
         # A wider beam costs time and buys accuracy. Worth it here: the clip
         # is five seconds long and the number in it is money.
         beam_size=settings.speech_beam_size,
-        patience=1.2,
-        # Falling back through temperatures rescues a clip the greedy pass
-        # made a mess of, rather than returning the mess.
-        temperature=[0.0, 0.2, 0.4, 0.6],
+        # One pass at temperature zero. The fallback ladder re-decodes a clip
+        # up to four times when the first pass looks unsure, which on a CPU is
+        # four times the wait for a sentence the broker is standing there
+        # waiting on. He can see the result and correct it faster than the
+        # model can second-guess itself.
+        temperature=0.0,
         # A market is noisy; trimming silence before decoding helps more than
         # it costs.
         vad_filter=True,
         vad_parameters={"min_silence_duration_ms": 300},
         )
 
-    language = settings.speech_language or None
     try:
         segments, info = run(language)
     except IndexError:
@@ -128,9 +150,10 @@ def transcribe(audio_path: Path, learned: tuple[str, ...] = (),
                  settings.speech_model, fallback)
         segments, info = run(fallback)
     text = " ".join(segment.text.strip() for segment in segments).strip()
+    log.info("%s heard as '%s' (%.2f)", audio_path.name, detected or "?", probability)
     return Transcript(
         text=text,
-        language=getattr(info, "language", None),
+        language=getattr(info, "language", None) or detected,
         duration_ms=int((time.time() - started) * 1000),
         engine=f"faster-whisper:{settings.speech_model}",
     )

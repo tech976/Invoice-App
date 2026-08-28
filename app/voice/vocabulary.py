@@ -63,28 +63,65 @@ def _fit(terms: tuple[str, ...], budget_chars: int) -> str:
     return " ".join(kept)
 
 
-def hotwords() -> str:
+# The same vocabulary as it is actually said in a mandi. Kept apart from the
+# English set on purpose: given to a decoder listening to English these words
+# cause it to hear 'pachas' where 'cashew' was said, and withheld from one
+# listening to Hindi it produces nothing usable at all. Which set is used is
+# decided per recording, once the language is known.
+# Romanised throughout, and deliberately so. Whisper writes back in whatever
+# script it was shown: give it Devanagari and it returns Devanagari, whose
+# spelling wobbles — 'सी' for 'से', 'बारे सो' for 'बारह सौ' — and every wobble
+# breaks a lookup. Shown the same words in Latin it returns Latin, and more
+# often than not writes the numbers as digits, which cannot wobble at all.
+INDIC_LANGUAGES = frozenset({"hi", "mr", "gu", "sa", "ne", "bn", "pa"})
+
+INDIC_UNITS = ("bori", "bora", "poti", "katta", "goni", "peti", "nag", "kilo",
+               "quintal", "bag", "bags")
+INDIC_COMMODITIES = ("akhrot", "badam", "kaju", "kishmish", "pista", "anjeer",
+                     "khajur", "elaichi", "haldi", "jeera", "chana", "gud")
+INDIC_PARTICLES = ("se", "ko", "ne", "la", "kadun", "bhav", "mein", "dar",
+                   "darane", "rate")
+INDIC_NUMBERS = ("ek", "do", "teen", "char", "panch", "saat", "aath", "nau",
+                 "das", "bara", "tera", "bees", "tees", "chalis", "pachas",
+                 "pannas", "saath", "sattar", "assi", "nabbe", "sau", "she",
+                 "hazaar", "taintis", "tehtis", "tiranave", "pachanave",
+                 "ikyanave", "chaurasi", "bavan", "sattavan")
+
+
+def hotwords(language: str | None = None) -> str:
     """Terms the decoder should lean toward, within its token budget.
 
     Ordered by what a wrong reading costs. Numbers first — a misheard rate is
     money — then units, then the commodities and particles.
     """
-    ordered = NUMBER_WORDS + UNITS + PARTICLES + COMMODITIES + CODE_EXAMPLES
+    if language in INDIC_LANGUAGES:
+        ordered = (INDIC_NUMBERS + INDIC_UNITS + INDIC_PARTICLES
+                   + INDIC_COMMODITIES + CODE_EXAMPLES)
+    else:
+        ordered = NUMBER_WORDS + UNITS + PARTICLES + COMMODITIES + CODE_EXAMPLES
     return _fit(ordered, 260)
 
 
-def initial_prompt(learned: tuple[str, ...] = ()) -> str:
+def initial_prompt(learned: tuple[str, ...] = (),
+                   language: str | None = None) -> str:
     """A sample in the style of the speech that follows.
 
     Whisper conditions on this as though it were the previous sentence, so it
     is written the way a broker actually books a sauda — mixed languages,
     codes, a quantity and a rate — rather than as a word list.
     """
-    sample = (
-        "C31 to V07, fifty bags walnut at eight thirteen. "
-        "K44 to L09, three hundred kg almond, rate twelve fifty. "
-        "N12 to S25, thirty three boxes cashew at nine ninety."
-    )
+    if language in INDIC_LANGUAGES:
+        sample = (
+            "C31 se V07 ko pachas bori akhrot aath sau tera bhav mein. "
+            "K44 kadun L09 la teen sau kilo badam bara she pachas darane. "
+            "N12 se S25 ko taintis peti kaju bara sau pachas mein."
+        )
+    else:
+        sample = (
+            "C31 to V07, fifty bags walnut at eight thirteen. "
+            "K44 to L09, three hundred kg almond, rate twelve fifty. "
+            "N12 to S25, thirty three boxes cashew at nine ninety."
+        )
     if learned:
         # Names the book has seen are worth more than more examples, but only
         # what is left of the budget after the examples themselves.

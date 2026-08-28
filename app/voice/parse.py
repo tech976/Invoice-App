@@ -21,9 +21,10 @@ from app.voice.numerals import normalise_digits, numbers_in
 # Units of trade, mapped to what the book stores.
 UNITS: dict[str, str] = {
     "bori": "BAGS", "bora": "BAGS", "boris": "BAGS", "बोरी": "BAGS", "બોરી": "BAGS",
+    "poti": "BAGS", "पोती": "BAGS", "पोटी": "BAGS", "goni": "BAGS", "गोणी": "BAGS",
     "bag": "BAGS", "bags": "BAGS", "थैला": "BAGS", "katta": "BAGS", "कट्टा": "BAGS",
     "kg": "KGS", "kgs": "KGS", "kilo": "KGS", "kilos": "KGS", "kilogram": "KGS",
-    "किलो": "KGS", "કિલો": "KGS",
+    "किलो": "KGS", "किलोग्राम": "KGS", "કિલો": "KGS",
     "quintal": "QTL", "quintals": "QTL", "qtl": "QTL", "क्विंटल": "QTL",
     "ton": "MT", "tons": "MT", "tonne": "MT", "mt": "MT", "टन": "MT",
     "peti": "BOX", "petti": "BOX", "box": "BOX", "boxes": "BOX", "carton": "BOX",
@@ -33,7 +34,8 @@ UNITS: dict[str, str] = {
 
 # Words that mark the number beside them as a price.
 RATE_CUES = {
-    "mein", "me", "rate", "bhav", "bhaav", "rupees", "rupee", "rs", "rs.",
+    "mein", "me", "rate", "bhav", "bhaav", "darane", "दराने", "dar", "दर",
+    "rupees", "rupee", "rs", "rs.",
     "per", "@", "ke", "ka", "ki", "price", "at", "भाव", "में", "रुपये",
     "ભાવ", "માં", "રૂપિયા", "prati", "प्रति", "each",
 }
@@ -41,8 +43,9 @@ RATE_CUES = {
 # Which side of the deal a name is on. Indian languages mark it after the
 # name, English before it, and the two are never read from the same side —
 # in 'from X to Y' the word following X is 'to'.
-TRAILING_SELLER = {"se", "kadun", "kadoon", "pasethi", "से", "कडून", "પાસેથી"}
-TRAILING_BUYER = {"ko", "को"}
+TRAILING_SELLER = {"se", "si", "kadun", "kadoon", "kadun", "pasethi",
+                   "से", "सी", "कडून", "कदुन", "પાસેથી"}
+TRAILING_BUYER = {"ko", "को", "la", "ला", "ne", "ને"}
 LEADING_SELLER = {"from", "by"}
 LEADING_BUYER = {"to"}
 
@@ -155,15 +158,18 @@ def _is_code(token: str) -> bool:
 
 
 def tidy_code(text: str) -> str:
-    """'C-31' and 'c 31' are filed as 'C31'.
+    """'C-31' and 'c 31' are filed as 'C31'; a name is spelled in Latin.
 
-    Only codes are touched, so a name keeps whatever capitalisation and
-    spacing it was said with.
+    The book is kept in English, so a party named in Devanagari is written out
+    in Latin letters rather than translated — अशापुरा is Ashapura. Otherwise
+    the same client appears twice, once per script, and no report adds up.
     """
+    from app.voice.translate import romanise
+
     stripped = text.strip(".,:;!?")
     if _is_code(stripped):
         return re.sub(r"[-\s]", "", stripped).upper()
-    return text.strip(".,")
+    return romanise(stripped.strip(".,")) or stripped.strip(".,")
 
 
 def _is_plain_word(token: str) -> bool:
@@ -476,10 +482,13 @@ def _fill_remaining(words: list[str], result: ParsedTrade, used: set[int]) -> No
             # Only the first stretch. Whatever else trails the rate is the
             # broker finishing his sentence, not a second commodity.
             run = source[0]
-            said = " ".join(words[i] for i in run)
-            said = " ".join(said.split()).strip(".,")
-            if said:
-                result.goods = Guess(said, said, 0.6)
+            heard = " ".join(" ".join(words[i] for i in run).split()).strip(".,")
+            if heard:
+                # Said in Marathi or Hindi, filed in English: 'kaju' is
+                # recorded as Cashew so one vocabulary reaches the reports.
+                # The words actually spoken stay beside it.
+                from app.voice.translate import term
+                result.goods = Guess(term(heard), heard, 0.6)
                 used.update(run)
 
 

@@ -15,7 +15,13 @@ TEST_DB = "invoice_app_test"
 os.environ["DATABASE_URL"] = f"postgresql+psycopg://localhost/{TEST_DB}"
 os.environ.setdefault("ANTHROPIC_API_KEY", "")
 
-subprocess.run(["createdb", TEST_DB], capture_output=True)
+try:
+    subprocess.run(["createdb", TEST_DB], capture_output=True)
+except FileNotFoundError:
+    # No Postgres on this machine. The tests that need one skip themselves
+    # below; the ones that are pure logic — numerals, dates, the spoken-trade
+    # parser — still run, which is what makes them useful on a laptop.
+    pass
 
 import pytest  # noqa: E402
 
@@ -23,10 +29,13 @@ from app.db import SessionLocal, engine  # noqa: E402
 from app.models import Base  # noqa: E402
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def schema():
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    try:
+        Base.metadata.drop_all(engine)
+        Base.metadata.create_all(engine)
+    except Exception as exc:  # noqa: BLE001 - absence of Postgres is not a failure
+        pytest.skip(f"no Postgres available: {exc}", allow_module_level=True)
     yield
     Base.metadata.drop_all(engine)
 

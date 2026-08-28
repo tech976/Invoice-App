@@ -17,8 +17,9 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import get_db
 from app.models import Trade, VoiceClip
-from app.voice import snap, speech, vocabulary
+from app.voice import english, extract_llm, runner, snap, speech, translate, vocabulary
 from app.voice.service import parse_spoken_trade, save_trade
+from app.voice.translate import romanise
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/voice", tags=["voice"])
@@ -54,11 +55,16 @@ def _record_clip(db: Session, filename: str, heard: str, engine: str,
 
 @router.get("/status")
 def voice_status() -> dict:
-    """Whether speech recognition is ready on this machine."""
+    """What is actually loaded on this machine, and what is queued."""
+    model_up = extract_llm.available()
     return {
         "speech_available": speech.available(),
         "model": settings.speech_model,
         "language": settings.speech_language or "auto",
+        "nlp_available": model_up,
+        "nlp_model": settings.nlp_model if model_up else None,
+        "read_by": "model" if (model_up and settings.nlp_backend == "llm") else "rules",
+        "queue": {"asr": runner.depth("asr"), "nlp": runner.depth("nlp")},
     }
 
 
@@ -92,8 +98,11 @@ async def parse_utterance(
             handle.write(data)
             handle.flush()
             try:
-                result = speech.transcribe(
-                    Path(handle.name), learned=vocabulary.learned_terms(db))
+                # Off the event loop and behind a one-deep queue: the server
+                # keeps answering, and two recordings never fight for cores.
+                result = await runner.run(
+                    "asr", speech.transcribe, Path(handle.name),
+                    learned=vocabulary.learned_terms(db))
             except speech.SpeechUnavailable as exc:
                 raise HTTPException(503, str(exc)) from exc
             except Exception as exc:  # noqa: BLE001
@@ -106,21 +115,110 @@ async def parse_utterance(
     if not heard:
         raise HTTPException(400, "Nothing was said.")
 
-    parsed = parse_spoken_trade(heard).as_dict()
-    # A name close to one already booked is snapped to it, and the screen is
-    # told what was changed. Typed input is left alone: if the broker wrote
-    # it, he meant it.
-    if audio is not None:
-        parsed = snap.snap_parsed(
-            parsed,
-            vocabulary.known_values(db, ("seller", "buyer")),
-            vocabulary.known_values(db, ("goods",)),
-        )
+    # Names are snapped to spellings this book already uses, but only for
+    # speech. Typed input is left alone: if the broker wrote it, he meant it.
+    parsed = await _read(
+        heard,
+        known_parties=vocabulary.known_values(db, ("seller", "buyer")) if audio else [],
+        known_goods=vocabulary.known_values(db, ("goods",)) if audio else [],
+    )
     if audio is not None and keep is not None:
         log.info("voice %s -> %r", keep.name, heard)
         parsed["clip"] = keep.name
         _record_clip(db, keep.name, heard, engine, duration_ms)
     return {"engine": engine, "duration_ms": duration_ms, **parsed}
+
+
+async def _read(heard: str, *, known_parties: list[str] | None = None,
+                known_goods: list[str] | None = None) -> dict:
+    """Turn one sentence into fields, using each reader for what it is good at.
+
+    Measured on the same sentences, the two disagree in a consistent way.
+
+    The language model understands meaning. It reads a commodity it was never
+    given a word for, in any of the three languages, because it read the word
+    rather than looked it up.
+
+    It is hopeless with Indian numerals. Over a run of twenty Hindi and
+    Marathi sentences it did not get a single figure right: 'तैंतीस बोरी'
+    came back as 115 bags, 'नौ सौ पचास' as 918, 'दो सौ क्विंटल' as 2909.
+    A three-billion-parameter model is simply not good at arithmetic, and a
+    wrong rate is the one error this system cannot afford.
+
+    The rule-based parser is the reverse: it cannot read a word it was never
+    given, but its numeral tables are exact and it has no opinion to be wrong
+    about.
+
+    So the split is by what each is reliable at, and it is not a vote:
+
+    * figures are the rules' alone. Where the rules could not read one, the
+      field is left blank rather than filled from the model — a blank gets
+      typed in, a confident wrong number gets saved. What the model thought
+      is shown beside it as a hint, never as the value.
+    * goods are the model's, except where the rules recognised a commodity
+      they actually hold, which is exact and beats a paraphrase.
+    * names are snapped to the spelling this book already uses.
+    """
+    rules = parse_spoken_trade(heard).as_dict()
+    rules["read_by"] = "rules"
+
+    merged = rules
+    if settings.nlp_backend == "llm":
+        merged = await _with_model(heard, rules)
+
+    # A name close to one already booked is snapped to it. Done last, so it
+    # applies to whichever reader produced the name.
+    merged = snap.snap_parsed(merged, known_parties or [], known_goods or [])
+    merged["english"] = english.sentence(merged)
+    return merged
+
+
+async def _with_model(heard: str, rules: dict) -> dict:
+    """Fold the language model's reading into the rules', where it helps."""
+    try:
+        got = await runner.run("nlp", extract_llm.extract, heard)
+    except extract_llm.ExtractionUnavailable as exc:
+        log.info("no language model (%s); read by rules alone", exc)
+        return rules
+    except Exception:  # noqa: BLE001 - a model failure must not lose the trade
+        log.exception("language model failed; read by rules alone")
+        return rules
+
+    trade = got.trade.model_dump()
+    merged = dict(rules)
+    merged.update({"read_by": "rules+model", "model": got.model,
+                   "nlp_ms": got.duration_ms})
+
+    # Goods: the rules win when they recognised an actual commodity, because
+    # a table hit is exact. Otherwise the model, which can read a word the
+    # tables were never given.
+    heard_goods = (rules.get("goods") or {}).get("text", "")
+    rules_knew = translate.is_known(heard_goods)
+    if trade.get("goods") and not rules_knew:
+        merged["goods"] = {"value": trade["goods"], "confidence": 0.85,
+                           "text": heard_goods, "read_by": "model"}
+
+    # A party the rules missed entirely is worth taking from the model,
+    # spelled in Latin like everything else in the book.
+    for field in ("seller", "buyer"):
+        if merged.get(field) is None and trade.get(field):
+            spelled = romanise(str(trade[field]))
+            merged[field] = {"value": spelled, "text": str(trade[field]),
+                             "confidence": 0.5, "read_by": "model"}
+
+    # Figures never come from the model — see the note above. It is recorded
+    # only so the screen can say what it thought.
+    for field in ("quantity", "rate", "uom"):
+        guess = merged.get(field)
+        theirs = trade.get(field)
+        if theirs is None:
+            continue
+        if guess is None:
+            merged[field] = {"value": None, "text": "", "confidence": 0.0,
+                             "model_said": theirs, "read_by": "unread"}
+        elif guess.get("value") != theirs:
+            merged[field] = {**guess, "model_said": theirs}
+    return merged
 
 
 @router.get("/clips")

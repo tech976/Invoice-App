@@ -47,6 +47,10 @@ def invoice(**kw):
         igst_amount=None, cess_amount=None, tcs_amount=None,
         other_charges=None, round_off=None, grand_total=None,
         total_quantity=None, amount_in_words=None, irn=None, eway_bill_no=None,
+        # What the completeness rule looks at: a bill can reconcile to the
+        # paisa with its transporter or its broker missing, and post clean.
+        unmapped_fields=[], transporter_id=None,
+        broker_name_raw=None, broker_id=None,
     )
     base.update(kw)
     return NS(**base)

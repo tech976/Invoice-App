@@ -20,6 +20,7 @@
 
 <div class="card" id="review" style="display:none;margin-top:18px">
   <div class="card-head"><h2>Check before saving</h2></div>
+  <p id="english" style="display:none;font-size:15px;margin:0 0 10px"></p>
   <p class="small" id="heard"></p>
   <div id="fields"></div>
   <div style="display:flex;gap:10px;margin-top:16px;align-items:center">
@@ -44,8 +45,11 @@ const num = v => v == null ? '' : Number(v).toLocaleString('en-IN');
 
 async function boot() {
   const st = await (await fetch('/api/voice/status')).json();
+  const reader = st.nlp_available
+    ? `understood by <b>${st.nlp_model}</b>`
+    : `understood by the built-in parser <span class="small">(no language model running)</span>`;
   $('#engine-note').innerHTML = st.speech_available
-    ? `Recognition running on this server · model <b>${st.model}</b> · language ${st.language}`
+    ? `Heard by <b>${st.model}</b> · ${reader} · all on this machine`
     : `<span class="warn">Speech engine not ready on the server — you can still type what was said.</span>`;
   if (!st.speech_available) $('#rec').disabled = true;
   loadRecent();
@@ -86,7 +90,10 @@ async function send(fd) {
     if (!res.ok) throw new Error(data.detail || 'Could not read that');
     current = data;
     showReview(data);
-    $('#rec-state').textContent = `Read in ${data.duration_ms} ms`;
+    const timing = [data.duration_ms ? `heard in ${(data.duration_ms/1000).toFixed(1)}s` : '',
+                    data.nlp_ms ? `understood in ${(data.nlp_ms/1000).toFixed(1)}s` : '']
+                   .filter(Boolean).join(' · ');
+    $('#rec-state').textContent = timing || 'Ready';
   } catch (err) {
     $('#rec-state').innerHTML = `<span class="warn">${err.message}</span>`;
   }
@@ -95,9 +102,16 @@ async function send(fd) {
 // --- review --------------------------------------------------------------
 function showReview(d) {
   const heardWords = g => {
+    // A figure the numeral tables could not read is left blank on purpose —
+    // the model's guess is shown as a hint, never filled in, because it is
+    // measurably bad at numbers.
+    if (g && g.value == null && g.model_said != null)
+      return `<span class="small warn">not read — the model thought “${g.model_said}”. Type it.</span>`;
     if (!g || !g.text) return '<span class="small warn">not heard</span>';
     if (g.snapped_from)
       return `<span class="small">heard “${g.snapped_from}” — matched to a name you have booked before</span>`;
+    if (g.model_said != null)
+      return `<span class="small">heard “${g.text}” — the model read it as “${g.model_said}”</span>`;
     return `<span class="small">heard “${g.text}”</span>`;
   };
   const colour = {seller:'#2563eb', buyer:'#7c3aed', goods:'#059669',
@@ -106,6 +120,11 @@ function showReview(d) {
   const chips = (d.words||[]).map(w =>
     `<span style="border-bottom:3px solid ${colour[w.role]||'#ccc'};margin-right:7px"
        title="${w.role}">${w.word}</span>`).join('');
+  // Said in Marathi or Hindi, read back in English. Composed from the fields
+  // below it, so if this sentence reads right then what gets saved is right.
+  $('#english').innerHTML = d.english
+    ? `<b>Understood as:</b> ${d.english}` : '';
+  $('#english').style.display = d.english ? '' : 'none';
   $('#heard').innerHTML =
     `<b>Heard:</b> ${chips}` +
     `<div class="small" style="margin-top:6px">` +
