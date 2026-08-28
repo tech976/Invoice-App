@@ -1,0 +1,53 @@
+{
+ "id": 6,
+ "name": "Suresh Deshmukh ( Suresh C 12 )",
+ "gstin": null,
+ "state_name": null,
+ "state_code": null,
+ "city": null,
+ "legal_name": "Suresh Deshmukh ( Suresh C 12 )",
+ "pan": null,
+ "fssai": null,
+ "address": null,
+ "pincode": null,
+ "phone": null,
+ "email": null,
+ "is_seller": false,
+ "is_buyer": false,
+ "is_transporter": false,
+ "is_broker": true,
+ "credit_days": null,
+ "credit_limit": null,
+ "contact_person": null,
+ "notes": null,
+ "is_verified": false,
+ "aliases": [],
+ "as_seller": {
+  "invoice_count": 0,
+  "grand_total": 0.0,
+  "taxable_value": 0.0,
+  "first_invoice": null,
+  "last_invoice": null
+ },
+ "as_buyer": {
+  "invoice_count": 0,
+  "grand_total": 0.0,
+  "taxable_value": 0.0,
+  "first_invoice": null,
+  "last_invoice": null
+ },
+ "as_transporter": {
+  "invoice_count": 0,
+  "grand_total": 0.0,
+  "taxable_value": 0.0,
+  "first_invoice": null,
+  "last_invoice": null
+ },
+ "as_broker": {
+  "invoice_count": 1,
+  "grand_total": 915216.0,
+  "taxable_value": 871633.95,
+  "first_invoice": "2026-07-24",
+  "last_invoice": "2026-07-24"
+ }
+}

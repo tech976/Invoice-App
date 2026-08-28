@@ -1,0 +1,50 @@
+{
+ "total": 3,
+ "documents": [
+  {
+   "id": 1,
+   "filename": "demo-bill-1.pdf",
+   "sha256": "0000000000000000000000000000000000000000000000000000000000000001",
+   "mime_type": "application/pdf",
+   "size_bytes": 409,
+   "page_count": 1,
+   "status": "extracted",
+   "error_message": null,
+   "text_quality": 0.98,
+   "extraction_route": "text_layer",
+   "producer": null,
+   "uploaded_at": "2026-08-28T12:46:34",
+   "invoice_id": 1
+  },
+  {
+   "id": 2,
+   "filename": "demo-bill-2.pdf",
+   "sha256": "0000000000000000000000000000000000000000000000000000000000000002",
+   "mime_type": "application/pdf",
+   "size_bytes": 409,
+   "page_count": 1,
+   "status": "extracted",
+   "error_message": null,
+   "text_quality": 0.98,
+   "extraction_route": "text_layer",
+   "producer": null,
+   "uploaded_at": "2026-08-28T12:46:34",
+   "invoice_id": 2
+  },
+  {
+   "id": 3,
+   "filename": "demo-bill-3.pdf",
+   "sha256": "0000000000000000000000000000000000000000000000000000000000000003",
+   "mime_type": "application/pdf",
+   "size_bytes": 409,
+   "page_count": 1,
+   "status": "extracted",
+   "error_message": null,
+   "text_quality": 0.98,
+   "extraction_route": "text_layer",
+   "producer": null,
+   "uploaded_at": "2026-08-28T12:46:34",
+   "invoice_id": 3
+  }
+ ]
+}

@@ -1,42 +1,37 @@
-# Everything that is not the running application.
+# Front-end only. The deployment is the contents of public/ and nothing else.
 #
-# Two of these matter more than tidiness. The root requirements.txt pulls in
-# faster-whisper, torch and scipy — some 800 MB that this host has no use for
-# and no room for — and the Python builder will use it if it finds it, so it
-# is kept out and api/requirements.txt is the only one left to find. And the
-# markdown files name real sellers and buyers, which is nobody's business at
-# a public URL.
+# api/ is excluded deliberately: Vercel turns any .py file in that folder into
+# a serverless function, and a function is precisely what this deployment is
+# meant not to have. Nothing here can crash, because nothing here runs.
+#
+# To put the working application back, delete this file's `api/` and `app/`
+# lines and restore the function config in vercel.json — see git history for
+# commit 3948954, which has both.
+
+api/
+app/
+scripts/
+tests/
 
 # --- never publish: third-party business records ---
 data/
 Invoices/
 samples/
-tests/
 .env
 *.pdf
 
-# --- the voice stack does not run on this host ---
-app/voice/
-app/api/voice.py
-app/templates/speak.html
-app/templates/training.html
-app/templates/trades.html
-
-# --- would shadow api/requirements.txt and blow the bundle ---
-requirements.txt
-requirements-training.txt
-
-# --- documentation, naming real parties ---
-README.md
-EXTRACTION_PLAN.md
-DEPLOY-VERCEL.md
-
-# --- local junk ---
+# --- not part of a static site ---
 .venv/
 .DS_Store
 .pytest_cache/
 __pycache__/
 *.pyc
-.gitignore
+requirements.txt
+requirements-training.txt
+render.yaml
+deploy-vercel.sh
+README.md
+EXTRACTION_PLAN.md
+DEPLOY-VERCEL.md
 run.sh
-scripts/
+.gitignore

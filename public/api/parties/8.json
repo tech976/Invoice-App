@@ -1,0 +1,53 @@
+{
+ "id": 8,
+ "name": "Vega Cargo Movers",
+ "gstin": "29VEGPM3384H1ZL",
+ "state_name": "Karnataka",
+ "state_code": "29",
+ "city": null,
+ "legal_name": "Vega Cargo Movers",
+ "pan": null,
+ "fssai": null,
+ "address": null,
+ "pincode": null,
+ "phone": null,
+ "email": null,
+ "is_seller": false,
+ "is_buyer": false,
+ "is_transporter": true,
+ "is_broker": false,
+ "credit_days": null,
+ "credit_limit": null,
+ "contact_person": null,
+ "notes": null,
+ "is_verified": false,
+ "aliases": [],
+ "as_seller": {
+  "invoice_count": 0,
+  "grand_total": 0.0,
+  "taxable_value": 0.0,
+  "first_invoice": null,
+  "last_invoice": null
+ },
+ "as_buyer": {
+  "invoice_count": 0,
+  "grand_total": 0.0,
+  "taxable_value": 0.0,
+  "first_invoice": null,
+  "last_invoice": null
+ },
+ "as_transporter": {
+  "invoice_count": 1,
+  "grand_total": 884463.0,
+  "taxable_value": 840845.25,
+  "first_invoice": "2026-07-22",
+  "last_invoice": "2026-07-22"
+ },
+ "as_broker": {
+  "invoice_count": 0,
+  "grand_total": 0.0,
+  "taxable_value": 0.0,
+  "first_invoice": null,
+  "last_invoice": null
+ }
+}

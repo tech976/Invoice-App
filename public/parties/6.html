@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Party · Invoice Ledger</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧾</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Invoice<span>Ledger</span></div>
+  <nav class="main">
+    <a href="/" class="">Dashboard</a>
+    <a href="/upload" class="">Upload</a>
+    
+    <a href="/invoices" class="">Invoices</a>
+    <a href="/review" class="">Review</a>
+    <a href="/parties" class="active">Parties</a>
+    <a href="/reports" class="">Reports</a>
+  </nav>
+  <div class="meta" id="topmeta"></div>
+</header>
+
+<main class="">
+  
+<div id="head"></div>
+<div class="split even" style="margin-top:20px">
+  <div class="card"><h3>Details</h3><div id="details"></div></div>
+  <div class="card"><h3>Activity</h3><div id="rollup"></div></div>
+</div>
+
+<div class="card pad0">
+  <div class="card-head"><h2>Invoices</h2></div>
+  <div style="padding:16px 20px 0"><div class="tabs" id="roletabs"></div></div>
+  <div class="table-wrap"><table class="wide" id="invoices">
+    <thead><tr><th>Invoice</th><th>Date</th><th>Counterparty</th>
+      <th class="num">Qty</th><th class="num">Taxable ₹</th><th class="num">Total ₹</th>
+      <th>Status</th></tr></thead><tbody></tbody><tfoot></tfoot></table></div>
+</div>
+
+</main>
+
+<div id="toast"></div>
+<script src="/static/app.js"></script>
+<script>
+  api('/api/health').then(h => {
+    document.getElementById('topmeta').innerHTML = h.api_key_configured
+      ? esc(h.model)
+      : '<span class="badge err">no API key &mdash; set ANTHROPIC_API_KEY in .env</span>';
+  }).catch(() => {});
+</script>
+
+<script>
+const PARTY_ID = 6;
+let party = null, role = 'seller';
+
+async function load() {
+  party = await api('/api/parties/' + PARTY_ID);
+
+  document.getElementById('head').innerHTML = `
+    <h1>${esc(party.name)} ${party.is_verified ? '<span class="badge ok">verified</span>' : ''}</h1>
+    <p class="subtitle mb0"><span class="mono">${esc(party.gstin || 'no GSTIN on file')}</span>${
+      party.state_name ? ' · ' + esc(party.state_name) : ''}</p>`;
+
+  const rows = [
+    ['Legal name', party.legal_name], ['GSTIN', party.gstin], ['PAN', party.pan],
+    ['FSSAI', party.fssai], ['Address', party.address], ['City', party.city],
+    ['State', party.state_name], ['Pincode', party.pincode],
+    ['Phone', party.phone], ['Email', party.email],
+    ['Also known as', party.aliases.join(' · ')],
+  ].filter(([, v]) => v);
+  document.getElementById('details').innerHTML =
+    `<dl class="kv">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
+
+  const roles = [['as_seller','As seller'], ['as_buyer','As buyer'],
+                 ['as_transporter','As transporter'], ['as_broker','As broker']];
+  document.getElementById('rollup').innerHTML = `<dl class="kv">${roles.map(([k, label]) => {
+    const d = party[k];
+    if (!d.invoice_count) return '';
+    return `<dt>${label}</dt><dd>${d.invoice_count} bill(s) · ${rupees(d.grand_total)}
+      <div class="faint">${dmy(d.first_invoice)} – ${dmy(d.last_invoice)}</div></dd>`;
+  }).join('') || '<dt>—</dt><dd>No invoices recorded yet.</dd>'}</dl>`;
+
+  const active = roles.filter(([k]) => party[k].invoice_count);
+  role = (active[0] || ['as_seller'])[0].replace('as_', '');
+  document.getElementById('roletabs').innerHTML = active.map(([k, label]) => {
+    const r = k.replace('as_', '');
+    return `<button class="tab ${r === role ? 'active' : ''}" data-role="${r}"
+              onclick="setRole('${r}')">${label}
+              <span class="faint">${party[k].invoice_count}</span></button>`;
+  }).join('');
+
+  loadInvoices();
+}
+
+function setRole(r) {
+  role = r;
+  document.querySelectorAll('#roletabs .tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.role === r));
+  loadInvoices();
+}
+
+async function loadInvoices() {
+  const key = { seller: 'seller_id', buyer: 'buyer_id',
+                transporter: 'transporter_id', broker: 'broker_id' }[role];
+  const r = await api('/api/invoices?' + qs({ [key]: PARTY_ID, limit: 500 }));
+  const other = role === 'seller' ? 'buyer' : 'seller';
+
+  document.querySelector('#invoices tbody').innerHTML = r.invoices.length ? r.invoices.map(i => `
+    <tr>
+      <td><a href="/invoices/${i.id}">${esc(i.invoice_number || '(no number)')}</a></td>
+      <td class="nowrap">${dmy(i.invoice_date)}</td>
+      <td>${partyLink(i[other])}</td>
+      <td class="num">${qty(i.total_quantity)} ${esc(i.total_quantity_uom || '')}</td>
+      <td class="num">${money(i.taxable_value)}</td>
+      <td class="num">${money(i.grand_total)}</td>
+      <td>${statusBadge(i.status)}</td>
+    </tr>`).join('') : '<tr><td colspan="7" class="empty">No invoices in this role.</td></tr>';
+
+  document.querySelector('#invoices tfoot').innerHTML = r.invoices.length ? `
+    <tr><td colspan="4">Total (${r.invoices.length})</td>
+      <td class="num">${money(r.page_totals.taxable_value)}</td>
+      <td class="num">${money(r.page_totals.grand_total)}</td><td></td></tr>` : '';
+}
+
+load().catch(e => toast(e.message, 'err'));
+</script>
+
+</body>
+</html>

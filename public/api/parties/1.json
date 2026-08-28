@@ -1,0 +1,53 @@
+{
+ "id": 1,
+ "name": "Northgate Agro Commodities Limited",
+ "gstin": "27NGACL2841M1ZO",
+ "state_name": "Maharashtra",
+ "state_code": "27",
+ "city": "Navi Mumbai",
+ "legal_name": "Northgate Agro Commodities Limited",
+ "pan": "NGACL2841M",
+ "fssai": "10000000000001",
+ "address": "Shop No. G-17, APMC Market-I, Phase-II, Masala Market, Sec-19, Vashi, Navi Mumbai, 400703",
+ "pincode": "400703",
+ "phone": "+91 - 9000000001",
+ "email": "accounts@northgateagro.example",
+ "is_seller": true,
+ "is_buyer": false,
+ "is_transporter": false,
+ "is_broker": false,
+ "credit_days": null,
+ "credit_limit": null,
+ "contact_person": null,
+ "notes": null,
+ "is_verified": false,
+ "aliases": [],
+ "as_seller": {
+  "invoice_count": 1,
+  "grand_total": 6139238.0,
+  "taxable_value": 5846893.0,
+  "first_invoice": "2026-07-21",
+  "last_invoice": "2026-07-21"
+ },
+ "as_buyer": {
+  "invoice_count": 0,
+  "grand_total": 0.0,
+  "taxable_value": 0.0,
+  "first_invoice": null,
+  "last_invoice": null
+ },
+ "as_transporter": {
+  "invoice_count": 0,
+  "grand_total": 0.0,
+  "taxable_value": 0.0,
+  "first_invoice": null,
+  "last_invoice": null
+ },
+ "as_broker": {
+  "invoice_count": 0,
+  "grand_total": 0.0,
+  "taxable_value": 0.0,
+  "first_invoice": null,
+  "last_invoice": null
+ }
+}

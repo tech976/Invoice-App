@@ -1,0 +1,21 @@
+{
+ "dimension": "transporter",
+ "rows": [
+  {
+   "party": {
+    "id": 8,
+    "name": "Vega Cargo Movers",
+    "gstin": "29VEGPM3384H1ZL",
+    "state_name": "Karnataka",
+    "state_code": "29",
+    "city": null
+   },
+   "invoice_count": 1,
+   "taxable_value": 840845.25,
+   "grand_total": 884463.0,
+   "amount_paid": 0.0,
+   "outstanding": 884463.0,
+   "last_invoice": "2026-07-22"
+  }
+ ]
+}

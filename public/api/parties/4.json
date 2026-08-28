@@ -1,0 +1,53 @@
+{
+ "id": 4,
+ "name": "Bluepeak Agrocomm Pvt Ltd",
+ "gstin": "27BLPKA6015E1ZN",
+ "state_name": "Maharashtra",
+ "state_code": "27",
+ "city": "Navi Mumbai",
+ "legal_name": "Bluepeak Agrocomm Pvt Ltd",
+ "pan": "BLPKA6015E",
+ "fssai": "10000000000003",
+ "address": "B Wing Corporate Aura 1803 To 1806 Thane Belapur Road Turbhe, Navi Mumbai-400705, Maharashtra, India",
+ "pincode": "400705",
+ "phone": "+91-22-40000003",
+ "email": "accounts@bluepeakagro.example",
+ "is_seller": true,
+ "is_buyer": false,
+ "is_transporter": false,
+ "is_broker": false,
+ "credit_days": null,
+ "credit_limit": null,
+ "contact_person": null,
+ "notes": null,
+ "is_verified": false,
+ "aliases": [],
+ "as_seller": {
+  "invoice_count": 1,
+  "grand_total": 915216.0,
+  "taxable_value": 871633.95,
+  "first_invoice": "2026-07-24",
+  "last_invoice": "2026-07-24"
+ },
+ "as_buyer": {
+  "invoice_count": 0,
+  "grand_total": 0.0,
+  "taxable_value": 0.0,
+  "first_invoice": null,
+  "last_invoice": null
+ },
+ "as_transporter": {
+  "invoice_count": 0,
+  "grand_total": 0.0,
+  "taxable_value": 0.0,
+  "first_invoice": null,
+  "last_invoice": null
+ },
+ "as_broker": {
+  "invoice_count": 0,
+  "grand_total": 0.0,
+  "taxable_value": 0.0,
+  "first_invoice": null,
+  "last_invoice": null
+ }
+}

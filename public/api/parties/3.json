@@ -1,0 +1,53 @@
+{
+ "id": 3,
+ "name": "Ramesh Kulkarni",
+ "gstin": null,
+ "state_name": null,
+ "state_code": null,
+ "city": null,
+ "legal_name": "Ramesh Kulkarni",
+ "pan": null,
+ "fssai": null,
+ "address": null,
+ "pincode": null,
+ "phone": null,
+ "email": null,
+ "is_seller": false,
+ "is_buyer": false,
+ "is_transporter": false,
+ "is_broker": true,
+ "credit_days": null,
+ "credit_limit": null,
+ "contact_person": null,
+ "notes": null,
+ "is_verified": false,
+ "aliases": [],
+ "as_seller": {
+  "invoice_count": 0,
+  "grand_total": 0.0,
+  "taxable_value": 0.0,
+  "first_invoice": null,
+  "last_invoice": null
+ },
+ "as_buyer": {
+  "invoice_count": 0,
+  "grand_total": 0.0,
+  "taxable_value": 0.0,
+  "first_invoice": null,
+  "last_invoice": null
+ },
+ "as_transporter": {
+  "invoice_count": 0,
+  "grand_total": 0.0,
+  "taxable_value": 0.0,
+  "first_invoice": null,
+  "last_invoice": null
+ },
+ "as_broker": {
+  "invoice_count": 1,
+  "grand_total": 6139238.0,
+  "taxable_value": 5846893.0,
+  "first_invoice": "2026-07-21",
+  "last_invoice": "2026-07-21"
+ }
+}

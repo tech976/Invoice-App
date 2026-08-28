@@ -1,0 +1,53 @@
+{
+ "dimension": "seller",
+ "rows": [
+  {
+   "party": {
+    "id": 1,
+    "name": "Northgate Agro Commodities Limited",
+    "gstin": "27NGACL2841M1ZO",
+    "state_name": "Maharashtra",
+    "state_code": "27",
+    "city": "Navi Mumbai"
+   },
+   "invoice_count": 1,
+   "taxable_value": 5846893.0,
+   "grand_total": 6139238.0,
+   "amount_paid": 0.0,
+   "outstanding": 6139238.0,
+   "last_invoice": "2026-07-21"
+  },
+  {
+   "party": {
+    "id": 4,
+    "name": "Bluepeak Agrocomm Pvt Ltd",
+    "gstin": "27BLPKA6015E1ZN",
+    "state_name": "Maharashtra",
+    "state_code": "27",
+    "city": "Navi Mumbai"
+   },
+   "invoice_count": 1,
+   "taxable_value": 871633.95,
+   "grand_total": 915216.0,
+   "amount_paid": 0.0,
+   "outstanding": 915216.0,
+   "last_invoice": "2026-07-24"
+  },
+  {
+   "party": {
+    "id": 7,
+    "name": "K.R.FOODS",
+    "gstin": "27KRFPJ5107E1ZU",
+    "state_name": "Maharashtra",
+    "state_code": "27",
+    "city": "Navi Mumbai"
+   },
+   "invoice_count": 1,
+   "taxable_value": 840845.25,
+   "grand_total": 884463.0,
+   "amount_paid": 0.0,
+   "outstanding": 884463.0,
+   "last_invoice": "2026-07-22"
+  }
+ ]
+}
