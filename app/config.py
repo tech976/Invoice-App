@@ -158,8 +158,13 @@ class Settings(BaseSettings):
 # Render, Railway and Heroku each pick a different one, and none of them is
 # DATABASE_URL in the form SQLAlchemy wants.
 _HOSTED_DB_VARS = (
-    "DATABASE_URL", "POSTGRES_URL", "POSTGRES_PRISMA_URL",
+    # Neon, which is what Vercel's marketplace provisions, sets the first two.
+    "DATABASE_URL", "DATABASE_URL_UNPOOLED",
+    # Vercel's own older Postgres, and Supabase, use these.
+    "POSTGRES_URL", "POSTGRES_PRISMA_URL",
     "POSTGRES_URL_NON_POOLING", "POSTGRES_URL_NO_SSL",
+    # Render and Railway.
+    "RENDER_DATABASE_URL", "DATABASE_PRIVATE_URL",
 )
 
 
