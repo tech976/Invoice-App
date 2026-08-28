@@ -1,0 +1,28 @@
+# One file, one click: the web service and its database together.
+#
+# Render reads this and creates both, then puts the database's own connection
+# string into the app's environment. There is nothing to copy, paste, attach
+# or configure afterwards, which is the whole reason this file exists.
+services:
+  - type: web
+    name: invoice-ledger
+    runtime: python
+    plan: free
+    buildCommand: pip install -r api/requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      # No disk worth keeping anything on: a free instance's filesystem is
+      # wiped on every deploy. So bills live in the database and are read
+      # during the upload request, exactly as on any serverless host.
+      - key: SERVERLESS
+        value: "1"
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: invoice-db
+          property: connectionString
+
+databases:
+  - name: invoice-db
+    plan: free

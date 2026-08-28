@@ -8,6 +8,9 @@
 
 # --- web ---
 fastapi==0.115.6
+# Vercel supplies its own server and ignores this; Render and any ordinary
+# host need one. It is about a megabyte, so it travels with both.
+uvicorn[standard]==0.34.0
 jinja2==3.1.5
 python-multipart==0.0.20
 
