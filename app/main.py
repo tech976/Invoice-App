@@ -28,7 +28,14 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "app" / "templates"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    try:
+        init_db()
+    except Exception as exc:  # noqa: BLE001 - a missing database is a message
+        # Raising here takes the whole function down, and every page then
+        # reports that the server crashed — which says nothing about the
+        # database not being attached yet. Far better to start, and let the
+        # first request say what is actually wrong.
+        log.error("could not reach the database at startup: %s", exc)
     if settings.serverless:
         # No thread outlives the response that started it, so there is no
         # queue to drain and nothing to recover. Bills are read inline by the
@@ -86,17 +93,36 @@ async def unhandled(request: Request, exc: Exception):  # pragma: no cover
 
 
 @app.get("/api/health")
-def health(db: Session = Depends(get_db)) -> dict:
+def health() -> JSONResponse:
+    """Whether this deployment can actually work, and if not, what is missing.
+
+    Deliberately does not depend on a database session: the one moment this
+    endpoint matters most is when the database is the thing that is wrong,
+    and an endpoint that cannot answer then is no use.
+    """
     from sqlalchemy import text
 
-    db.execute(text("SELECT 1"))
-    return {
+    from app.db import engine
+
+    info = {
         "status": "ok",
-        "database": str(db.bind.url.render_as_string(hide_password=True)),
-        "model": settings.extraction_model,
-        "api_key_configured": bool(settings.anthropic_api_key),
-        "workers": settings.worker_threads,
+        "serverless": settings.serverless,
+        "extraction_backend": settings.extraction_backend,
+        "database": engine.url.render_as_string(hide_password=True),
     }
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as exc:  # noqa: BLE001 - the report is the point
+        info["status"] = "no_database"
+        info["error"] = f"{type(exc).__name__}: {exc}"[:300]
+        info["fix"] = (
+            "No database is attached. In the Vercel dashboard open Storage, "
+            "create a Postgres database, connect it to this project, then "
+            "redeploy."
+        )
+        return JSONResponse(status_code=503, content=info)
+    return JSONResponse(info)
 
 
 # --------------------------------------------------------------------------

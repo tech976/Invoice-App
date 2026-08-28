@@ -191,12 +191,37 @@ def _discover_database_url() -> str | None:
     return None
 
 
+# What the example file ships with, and the shapes people leave behind when
+# they mean "not set".
+_PLACEHOLDER_MARKS = ("your-key", "your_key", "changeme", "xxx", "...",
+                      "here", "placeholder", "<", "example")
+
+
+def _real_key(value: str | None) -> str | None:
+    """A key, or None if it is obviously the placeholder from .env.example.
+
+    An unset key and a fake one behave very differently: unset means no second
+    reading is attempted at all, while `sk-ant-your-key-here` is a perfectly
+    truthy string that buys a 401 and a couple of wasted seconds on every
+    bill. Copying the example file and not editing it is the normal way to
+    arrive here, so it is treated as what it means.
+    """
+    key = (value or "").strip()
+    if not key:
+        return None
+    lowered = key.lower()
+    if any(mark in lowered for mark in _PLACEHOLDER_MARKS):
+        return None
+    return key
+
+
 @lru_cache
 def get_settings() -> Settings:
     s = Settings()
     found = _discover_database_url()
     if found:
         s.database_url = found
+    s.anthropic_api_key = _real_key(s.anthropic_api_key)
     s.ensure_dirs()
     return s
 
