@@ -4,10 +4,16 @@
   "installCommand": "echo 'static site: nothing to install'",
   "buildCommand": "echo 'static site: nothing to build'",
   "outputDirectory": "public",
-  "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [
-    { "source": "/api/documents/:id/file", "destination": "/api/documents/:id/file.pdf" },
-    { "source": "/api/:path*", "destination": "/api/:path*.json" }
+    { "source": "/api/documents/(.*)/file", "destination": "/api/documents/$1/file.pdf" },
+    { "source": "/api/(.*)", "destination": "/api/$1.json" },
+    { "source": "/invoices/(.*)", "destination": "/invoices/$1.html" },
+    { "source": "/parties/(.*)", "destination": "/parties/$1.html" },
+    { "source": "/invoices", "destination": "/invoices.html" },
+    { "source": "/parties", "destination": "/parties.html" },
+    { "source": "/review", "destination": "/review.html" },
+    { "source": "/reports", "destination": "/reports.html" },
+    { "source": "/upload", "destination": "/upload.html" }
   ]
 }
