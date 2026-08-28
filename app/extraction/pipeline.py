@@ -53,11 +53,31 @@ class PipelineError(RuntimeError):
 # --------------------------------------------------------------------------
 
 
+def materialise(document: Document) -> Path:
+    """The bill as a file on disk, wherever it is actually being kept.
+
+    On a host with a disk that is the stored path and this does nothing. On
+    one without, the bytes live in the database and are written to scratch
+    space for the length of the request — every reader below works from a
+    path, and this is the one place that has to care which host it is.
+    """
+    path = Path(document.stored_path)
+    if path.exists():
+        return path
+    if not document.content:
+        raise PipelineError(f"Stored file is missing: {path}")
+
+    scratch = settings.scratch_dir / "docs"
+    scratch.mkdir(parents=True, exist_ok=True)
+    local = scratch / path.name
+    if not local.exists() or local.stat().st_size != len(document.content):
+        local.write_bytes(document.content)
+    return local
+
+
 def prepare_document(db: Session, document: Document) -> dict:
     """Render pages, pull text, decide the route. Idempotent."""
-    path = Path(document.stored_path)
-    if not path.exists():
-        raise PipelineError(f"Stored file is missing: {path}")
+    path = materialise(document)
 
     pages_dir = pages_dir_for(document.sha256)
     is_pdf = document.mime_type == "application/pdf"
@@ -73,7 +93,11 @@ def prepare_document(db: Session, document: Document) -> dict:
         quality = pdf_text.quality
         text_layer = pdf_text.full_text
         page_texts = {p.page_no: p.text for p in pdf_text.pages}
-        images = render_pdf_pages(path, pages_dir)
+        # Rendering exists to give a model something to look at, and to drive
+        # OCR. The local reader works off the text layer and the QR, and the
+        # screen shows the PDF itself, so where there is no disk to render
+        # onto nothing needs the images and the step is skipped outright.
+        images = [] if settings.serverless else render_pdf_pages(path, pages_dir)
         route = ROUTE_TEXT if quality >= settings.text_quality_threshold else ROUTE_OCR
     else:
         images = [normalize_image(path, pages_dir)]
@@ -260,6 +284,12 @@ def needs_second_reading(prepared: dict, extracted) -> str | None:
     plus the arithmetic checks is proportionate.
     """
     if not settings.enable_crosscheck:
+        return None
+
+    # A second reading is an API call. Without a key there is nothing to call,
+    # so asking for one buys a failed request and a couple of seconds on every
+    # bill — which is what a local-only deployment would get on all of them.
+    if not settings.anthropic_api_key:
         return None
 
     second = settings.escalation_model

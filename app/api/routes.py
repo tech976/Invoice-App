@@ -36,6 +36,7 @@ from app.models import (
     Product,
     ValidationFlag,
 )
+from app.extraction.pipeline import process_document
 from app.worker import enqueue
 
 log = logging.getLogger(__name__)
@@ -113,17 +114,38 @@ async def upload_documents(
             sha256=digest,
             original_filename=upload.filename or stored_path.name,
             stored_path=str(stored_path),
+            # Kept in the database only where there is no disk; see
+            # Settings.serverless.
+            content=data if settings.serverless else None,
             mime_type=mime,
             size_bytes=len(data),
             status="queued",
         )
         db.add(doc)
         db.flush()
+
+        if settings.serverless:
+            # No thread outlives this response, so the bill is read now. The
+            # local reader takes about a second, which fits inside the
+            # request; a queue here would simply never be drained.
+            db.commit()
+            try:
+                process_document(db, doc.id)
+                db.commit()
+                results.append({"filename": upload.filename, "status": "extracted",
+                                "document_id": doc.id})
+            except Exception as exc:  # noqa: BLE001 - reported, not raised
+                db.rollback()
+                log.exception("inline extraction failed for %s", upload.filename)
+                results.append({"filename": upload.filename, "status": "failed",
+                                "document_id": doc.id, "message": str(exc)[:400]})
+            continue
+
         enqueue(db, doc.id)
         results.append({"filename": upload.filename, "status": "queued", "document_id": doc.id})
 
     db.commit()
-    queued = sum(1 for r in results if r["status"] == "queued")
+    queued = sum(1 for r in results if r["status"] in ("queued", "extracted"))
     return {"queued": queued, "results": results}
 
 
@@ -168,19 +190,31 @@ def get_document(document_id: int, db: Session = Depends(get_db)) -> dict:
 
 @router.get("/documents/{document_id}/file")
 def get_document_file(document_id: int, db: Session = Depends(get_db)):
-    """Serve the original uploaded bill."""
+    """Serve the original uploaded bill, from wherever it is kept."""
     doc = db.get(Document, document_id)
     if doc is None:
         raise HTTPException(404, "Document not found")
     path = Path(doc.stored_path)
-    if not path.exists():
-        raise HTTPException(410, "The stored file is no longer on disk.")
-    return FileResponse(
-        path,
-        media_type=doc.mime_type,
-        filename=doc.original_filename,
-        content_disposition_type="inline",
-    )
+    if path.exists():
+        return FileResponse(
+            path,
+            media_type=doc.mime_type,
+            filename=doc.original_filename,
+            content_disposition_type="inline",
+        )
+    if doc.content:
+        # No disk on this host: the bill is in the database, which is the
+        # whole point of keeping it there. Every figure on screen still has a
+        # path back to the page it was read from.
+        from fastapi.responses import Response
+
+        return Response(
+            content=doc.content,
+            media_type=doc.mime_type,
+            headers={"Content-Disposition":
+                     f'inline; filename="{doc.original_filename}"'},
+        )
+    raise HTTPException(410, "The stored file is no longer available.")
 
 
 @router.get("/documents/{document_id}/page/{page_no}")

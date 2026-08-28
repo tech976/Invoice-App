@@ -18,9 +18,11 @@
   <nav class="main">
     <a href="/" class="{{ 'active' if nav == 'dashboard' }}">Dashboard</a>
     <a href="/upload" class="{{ 'active' if nav == 'upload' }}">Upload</a>
+    {% if not settings.serverless %}
     <a href="/speak" class="{{ 'active' if nav == 'speak' }}">🎤 Speak</a>
     <a href="/trades" class="{{ 'active' if nav == 'trades' }}">Trades</a>
     <a href="/training" class="{{ 'active' if nav == 'training' }}">Teach</a>
+    {% endif %}
     <a href="/invoices" class="{{ 'active' if nav == 'invoices' }}">Invoices</a>
     <a href="/review" class="{{ 'active' if nav == 'review' }}">Review</a>
     <a href="/parties" class="{{ 'active' if nav == 'parties' }}">Parties</a>

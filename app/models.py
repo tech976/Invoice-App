@@ -24,6 +24,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -141,6 +142,11 @@ class Document(TimestampMixin, Base):
     sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     original_filename: Mapped[str] = mapped_column(String(400), nullable=False)
     stored_path: Mapped[str] = mapped_column(String(600), nullable=False)
+    # The bill itself, kept here only where there is no disk to keep it on
+    # (see Settings.serverless). Every posted figure has to keep a path back
+    # to the page it came from, and on an ephemeral host the database is the
+    # only thing that outlives the request.
+    content: Mapped[Optional[bytes]] = mapped_column(LargeBinary)
     mime_type: Mapped[str] = mapped_column(String(120), default="application/pdf")
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
     page_count: Mapped[Optional[int]] = mapped_column(Integer)

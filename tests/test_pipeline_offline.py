@@ -288,6 +288,9 @@ def test_second_reading_is_bought_only_where_risk_is_real(monkeypatch):
     monkeypatch.setattr(settings, "extraction_model", "claude-sonnet-5")
     monkeypatch.setattr(settings, "escalation_model", "claude-opus-5")
     monkeypatch.setattr(settings, "crosscheck_min_value", 1_000_000.0)
+    # A second reading is an API call, so this asks what would be bought
+    # given there is something to buy it with.
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test")
 
     small = TALLY_INVOICE.model_copy(deep=True)
     small.grand_total = 9000
@@ -357,3 +360,25 @@ def test_disagreeing_readings_reach_the_review_queue(db, monkeypatch):
     assert invoice.status == "needs_review"
     # The stronger model's reading is the one filed.
     assert invoice.broker.legal_name == "Ramesh Kulkarni"
+
+
+def test_no_second_reading_without_a_key(monkeypatch):
+    """A local-only deployment has nothing to call.
+
+    Without this the reader asks for a second opinion on every bill that
+    qualifies, waits for the connection to fail, and logs an authentication
+    error — on a host that was never meant to reach an API at all.
+    """
+    from app.config import settings
+    from app.extraction.pipeline import ROUTE_OCR, needs_second_reading
+
+    monkeypatch.setattr(settings, "enable_crosscheck", True)
+    monkeypatch.setattr(settings, "escalation_model", "claude-opus-5")
+    monkeypatch.setattr(settings, "anthropic_api_key", None)
+
+    small = TALLY_INVOICE.model_copy(deep=True)
+    small.grand_total = 9000
+    small.overall_confidence = 0.97
+    # Every condition that would otherwise buy one.
+    assert needs_second_reading({"route": ROUTE_OCR}, small) is None
+    assert needs_second_reading({"route": ROUTE_OCR}, TALLY_INVOICE) is None

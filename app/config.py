@@ -23,6 +23,19 @@ class Settings(BaseSettings):
     # --- storage --------------------------------------------------------
     data_dir: Path = BASE_DIR / "data"
 
+    # --- serverless -----------------------------------------------------
+    # Vercel and hosts like it set VERCEL=1. There the filesystem is read
+    # only apart from /tmp, which is wiped between requests, and no thread
+    # outlives the response that started it. So on such a host the bill is
+    # kept in the database rather than on disk, it is read inline instead of
+    # by a background worker, and page images are not rendered at all — the
+    # local reader works off the PDF itself and the screen shows the PDF
+    # itself, so nothing needs them.
+    #
+    # Nothing about the reading changes. The same text layer, the same QR,
+    # the same arithmetic rules.
+    serverless: bool = bool(os.environ.get("VERCEL"))
+
     # --- extraction -----------------------------------------------------
     # 'local' reads the PDF's own text layer and its e-invoice QR, with no
     # model and no network. 'claude' sends the document to the API. See
@@ -117,8 +130,24 @@ class Settings(BaseSettings):
         return self.data_dir / "exports"
 
     def ensure_dirs(self) -> None:
+        """Create the storage tree, where there is one to create.
+
+        On a read-only host this is expected to fail and must not stop the
+        app importing: nothing is kept on disk there. Anything that really
+        needs a scratch file writes it under /tmp.
+        """
         for d in (self.data_dir, self.files_dir, self.pages_dir, self.exports_dir):
-            d.mkdir(parents=True, exist_ok=True)
+            try:
+                d.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                if not self.serverless:
+                    raise
+                return
+
+    @property
+    def scratch_dir(self) -> Path:
+        """Somewhere writable, whatever the host."""
+        return Path("/tmp/invoice-app") if self.serverless else self.data_dir
 
 
 @lru_cache

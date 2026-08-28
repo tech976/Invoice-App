@@ -60,7 +60,16 @@ def store_bytes(data: bytes, filename: str) -> tuple[str, Path, str]:
 
     digest = sha256_bytes(data)
     target = storage_path(digest, suffix)
-    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # No writable store — the caller keeps the bytes in the database
+        # instead. The path is still returned, and still content-addressed,
+        # so a later run on a host that does have a disk lands in the right
+        # place without anything being renamed.
+        if settings.serverless:
+            return digest, target, MIME_BY_SUFFIX.get(suffix, "application/octet-stream")
+        raise
     if not target.exists():
         # Write to a temp name first so a crash mid-write cannot leave a
         # truncated file sitting at the address of valid content.

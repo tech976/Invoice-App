@@ -11,7 +11,6 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.api.reports import router as reports_router
-from app.api.voice import router as voice_router
 from app.api.routes import router as api_router
 from app.config import BASE_DIR, settings
 from app.db import get_db, init_db
@@ -30,10 +29,16 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "app" / "templates"))
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    recovered = requeue_stuck()
-    if recovered:
-        log.info("requeued %s job(s) orphaned by a previous shutdown", recovered)
-    start_workers()
+    if settings.serverless:
+        # No thread outlives the response that started it, so there is no
+        # queue to drain and nothing to recover. Bills are read inline by the
+        # upload handler instead.
+        log.info("serverless: reading bills inline, no background workers")
+    else:
+        recovered = requeue_stuck()
+        if recovered:
+            log.info("requeued %s job(s) orphaned by a previous shutdown", recovered)
+        start_workers()
     if not settings.anthropic_api_key:
         log.warning(
             "ANTHROPIC_API_KEY is not set — uploads will queue but extraction "
@@ -53,7 +58,19 @@ app = FastAPI(
 
 app.include_router(api_router)
 app.include_router(reports_router)
-app.include_router(voice_router)
+
+# Voice entry needs a speech model and a language model on the machine, which
+# a serverless host has neither the disk nor the lifetime for. Imported only
+# where it can actually run, so its dependencies stay out of that build.
+if not settings.serverless:
+    try:
+        from app.api.voice import router as voice_router
+
+        app.include_router(voice_router)
+    except ImportError as exc:  # noqa: BLE001 - the ledger stands on its own
+        # A build without the speech stack should serve the ledger rather
+        # than fail to start over a feature it was never meant to carry.
+        log.warning("voice entry unavailable (%s); ledger only", exc)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), name="static")
 
 
@@ -101,19 +118,21 @@ def page_upload(request: Request):
     return _page(request, "upload.html", title="Upload Bills", nav="upload")
 
 
-@app.get("/speak")
-def page_speak(request: Request):
-    return _page(request, "speak.html", title="Book a Trade", nav="speak")
+# The voice screens exist only where voice entry does. Serving them on a host
+# with no recogniser would give a microphone button that cannot work.
+if not settings.serverless:
 
+    @app.get("/speak")
+    def page_speak(request: Request):
+        return _page(request, "speak.html", title="Book a Trade", nav="speak")
 
-@app.get("/training")
-def page_training(request: Request):
-    return _page(request, "training.html", title="Teach the recogniser", nav="training")
+    @app.get("/training")
+    def page_training(request: Request):
+        return _page(request, "training.html", title="Teach the recogniser", nav="training")
 
-
-@app.get("/trades")
-def page_trades(request: Request):
-    return _page(request, "trades.html", title="Trades", nav="trades")
+    @app.get("/trades")
+    def page_trades(request: Request):
+        return _page(request, "trades.html", title="Trades", nav="trades")
 
 
 @app.get("/invoices")

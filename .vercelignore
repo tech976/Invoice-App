@@ -1,0 +1,15 @@
+.venv/
+data/
+Invoices/
+samples/
+tests/
+scripts/
+*.pdf
+.env
+__pycache__/
+# The voice stack does not ship to this host.
+app/voice/
+app/api/voice.py
+app/templates/speak.html
+app/templates/training.html
+app/templates/trades.html
