@@ -10,7 +10,7 @@ if [ ! -x "$PY" ]; then
   PYTHON="${PYTHON:-$(command -v python3.12 || command -v python3)}"
   "$PYTHON" -m venv .venv
   .venv/bin/pip install --quiet --upgrade pip
-  .venv/bin/pip install --quiet -r requirements.txt
+  .venv/bin/pip install --quiet -r deploy/requirements-server.txt
 fi
 
 if [ ! -f .env ]; then
