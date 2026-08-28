@@ -88,6 +88,7 @@ Set these in the Vercel dashboard, under Settings → Environment Variables:
 
 | Variable | Value | Why |
 |---|---|---|
+| `SERVERLESS` | `1` | switches on the no-disk, read-inline behaviour |
 | `DATABASE_URL` | your Postgres URL | required; there is no SQLite fallback without a disk |
 | `EXTRACTION_BACKEND` | `local` | read the PDF here, call nothing |
 | `ENABLE_CROSSCHECK` | `false` | a second reading is an API call |

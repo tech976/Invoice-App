@@ -34,7 +34,11 @@ class Settings(BaseSettings):
     #
     # Nothing about the reading changes. The same text layer, the same QR,
     # the same arithmetic rules.
-    serverless: bool = bool(os.environ.get("VERCEL"))
+    #
+    # VERCEL is set by the host itself and is reserved, so it cannot be set by
+    # hand to test this path or to run the same build somewhere else. SERVERLESS
+    # can, and either is enough.
+    serverless: bool = bool(os.environ.get("VERCEL") or os.environ.get("SERVERLESS"))
 
     # --- extraction -----------------------------------------------------
     # 'local' reads the PDF's own text layer and its e-invoice QR, with no
