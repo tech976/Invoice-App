@@ -18,17 +18,36 @@ if ! command -v vercel >/dev/null 2>&1; then
   npm i -g vercel --silent || { echo "Could not install it. Run: npm i -g vercel"; exit 1; }
 fi
 
-if ! vercel whoami >/dev/null 2>&1; then
+# A token is the dependable way in. `vercel login` opens a menu that has to
+# be answered with the arrow keys before it opens a browser, and on a machine
+# where that browser handshake does not complete there is nothing to fall
+# back on. A token is created in the browser the user is already using, and
+# needs nothing from this terminal.
+TOKEN="${VERCEL_TOKEN:-${1:-}}"
+AUTH=""
+if [ -n "$TOKEN" ]; then
+  AUTH="--token $TOKEN"
+elif ! vercel whoami >/dev/null 2>&1; then
   echo
-  echo "You are not logged in. A browser window will open — choose GitHub."
+  echo "  Not logged in, and no token given."
   echo
-  vercel login || { echo "Login failed."; exit 1; }
+  echo "  Do this once:"
+  echo "    1. Open  https://vercel.com/account/tokens"
+  echo "    2. Create Token  ->  name it 'deploy'  ->  Scope: Full Account"
+  echo "    3. Copy it, then run:"
+  echo
+  echo "         ./deploy-vercel.sh  PASTE_TOKEN_HERE"
+  echo
+  echo "  (Or run 'vercel login' by itself and answer its menu with the"
+  echo "   arrow keys, then run this script again with no arguments.)"
+  exit 1
 fi
-echo "Logged in as: $(vercel whoami 2>/dev/null)"
+WHO="$(vercel whoami $AUTH 2>/dev/null | tail -1)"
+echo "Logged in as: ${WHO:-unknown}"
 
 echo
 echo "Uploading and building (2-4 minutes)..."
-OUT="$(vercel --prod --yes 2>&1)"
+OUT="$(vercel --prod --yes $AUTH 2>&1)"
 STATUS=$?
 echo "$OUT" | tail -25
 
