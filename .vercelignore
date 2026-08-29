@@ -23,8 +23,12 @@ app/templates/training.html
 app/templates/trades.html
 
 # --- would shadow api/requirements.txt and blow the bundle ---
-requirements.txt
-requirements-training.txt
+# Anchored to the root. These patterns carry no slash, and an unanchored
+# pattern matches at every level — so a bare `requirements.txt` took
+# api/requirements.txt with it, leaving the builder nothing to install and
+# every request failing on the first import.
+/requirements.txt
+/requirements-training.txt
 
 # --- documentation, naming real parties ---
 README.md
