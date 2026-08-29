@@ -64,3 +64,35 @@ def init_db() -> None:
 
     models.Base.metadata.create_all(engine)
     log.info("schema ensured on %s", engine.url.render_as_string(hide_password=True))
+
+
+def clear_ledger(connection) -> None:
+    """Empty every table, on either database.
+
+    Postgres takes one TRUNCATE across the lot: CASCADE settles the foreign
+    keys whatever order the tables come in, and RESTART IDENTITY puts the
+    sequences back to 1 so a reseeded ledger numbers from the top.
+
+    SQLite has no TRUNCATE and no CASCADE. DELETE in reverse dependency order
+    is the equivalent — children before parents, so no foreign key is ever
+    left dangling — and clearing `sqlite_sequence` is what restarts AUTOINCREMENT.
+    That table only exists once something has AUTOINCREMENT, hence the guard.
+    """
+    from app.models import Base
+
+    tables = list(reversed(Base.metadata.sorted_tables))
+
+    if connection.dialect.name == "postgresql":
+        for table in tables:
+            connection.exec_driver_sql(
+                f'TRUNCATE TABLE "{table.name}" RESTART IDENTITY CASCADE')
+        return
+
+    for table in tables:
+        connection.exec_driver_sql(f'DELETE FROM "{table.name}"')
+    if connection.dialect.name == "sqlite":
+        exists = connection.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'"
+        ).first()
+        if exists:
+            connection.exec_driver_sql("DELETE FROM sqlite_sequence")
