@@ -39,9 +39,12 @@
 <script src="/static/app.js"></script>
 <script>
   api('/api/health').then(h => {
-    document.getElementById('topmeta').innerHTML = h.api_key_configured
-      ? esc(h.model)
-      : '<span class="badge err">no API key &mdash; set ANTHROPIC_API_KEY in .env</span>';
+    // A missing key only matters where a model is actually called. On the
+    // local backend nothing is, so naming the reader is the whole story.
+    document.getElementById('topmeta').innerHTML =
+      (h.api_key_required && !h.api_key_configured)
+        ? '<span class="badge err">no API key &mdash; set ANTHROPIC_API_KEY</span>'
+        : esc(h.reader || h.model);
   }).catch(() => {});
 </script>
 {% block scripts %}{% endblock %}

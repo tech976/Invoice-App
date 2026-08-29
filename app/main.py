@@ -90,11 +90,18 @@ def health(db: Session = Depends(get_db)) -> dict:
     from sqlalchemy import text
 
     db.execute(text("SELECT 1"))
+    # The local backend calls nothing, so a missing key is the configured
+    # state rather than a fault. Reporting it as one put a red badge across
+    # the top of a deployment that was working exactly as intended.
+    local = settings.extraction_backend == "local"
     return {
         "status": "ok",
         "database": str(db.bind.url.render_as_string(hide_password=True)),
+        "backend": settings.extraction_backend,
+        "reader": "local reader" if local else settings.extraction_model,
         "model": settings.extraction_model,
         "api_key_configured": bool(settings.anthropic_api_key),
+        "api_key_required": not local,
         "workers": settings.worker_threads,
     }
 
