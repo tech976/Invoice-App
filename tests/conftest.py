@@ -25,7 +25,7 @@ except FileNotFoundError:
 
 import pytest  # noqa: E402
 
-from app.db import SessionLocal, engine  # noqa: E402
+from app.db import SessionLocal, clear_ledger, engine  # noqa: E402
 from app.models import Base  # noqa: E402
 
 
@@ -44,8 +44,7 @@ def schema():
 def db(schema):
     """A clean database for each test."""
     with engine.begin() as conn:
-        for table in reversed(Base.metadata.sorted_tables):
-            conn.exec_driver_sql(f'TRUNCATE TABLE "{table.name}" RESTART IDENTITY CASCADE')
+        clear_ledger(conn)
     session = SessionLocal()
     try:
         yield session

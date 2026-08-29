@@ -17,13 +17,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import select, text  # noqa: E402
+from sqlalchemy import select  # noqa: E402
 
-from app.db import engine, init_db, session_scope  # noqa: E402
+from app.db import clear_ledger, engine, init_db, session_scope  # noqa: E402
 from app.extraction import llm, pipeline  # noqa: E402
 from app.extraction.llm import ExtractionResult  # noqa: E402
 from app.ingest.storage import store_file  # noqa: E402
-from app.models import Base, Document  # noqa: E402
+from app.models import Document  # noqa: E402
 from tests.fixtures import SAMPLES  # noqa: E402
 
 try:
@@ -56,8 +56,7 @@ def main() -> int:
 
     if args.reset:
         with engine.begin() as conn:
-            for table in reversed(Base.metadata.sorted_tables):
-                conn.execute(text(f'TRUNCATE TABLE "{table.name}" RESTART IDENTITY CASCADE'))
+            clear_ledger(conn)
         log.info("ledger cleared")
 
     # Stand in for the API call with the transcribed extraction for each file.
