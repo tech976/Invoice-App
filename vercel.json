@@ -1,19 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
-  "installCommand": "echo 'static site: nothing to install'",
-  "buildCommand": "echo 'static site: nothing to build'",
-  "outputDirectory": "public",
-  "trailingSlash": false,
+  "functions": {
+    "api/index.py": {
+      "memory": 2048,
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
-    { "source": "/api/documents/(.*)/file", "destination": "/api/documents/$1/file.pdf" },
-    { "source": "/api/(.*)", "destination": "/api/$1.json" },
-    { "source": "/invoices/(.*)", "destination": "/invoices/$1.html" },
-    { "source": "/parties/(.*)", "destination": "/parties/$1.html" },
-    { "source": "/invoices", "destination": "/invoices.html" },
-    { "source": "/parties", "destination": "/parties.html" },
-    { "source": "/review", "destination": "/review.html" },
-    { "source": "/reports", "destination": "/reports.html" },
-    { "source": "/upload", "destination": "/upload.html" }
+    { "source": "/(.*)", "destination": "/api/index.py" }
   ]
 }

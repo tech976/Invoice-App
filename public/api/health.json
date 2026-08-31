@@ -1,6 +1,0 @@
-{
- "status": "ok",
- "serverless": true,
- "extraction_backend": "local",
- "database": "sqlite:////var/folders/dj/mn6nvs192kq2drg93kdfyb800000gn/T/invoice-static-jlgl_ks6/demo.db"
-}
