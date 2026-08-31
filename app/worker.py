@@ -22,6 +22,11 @@ from app.models import Document, Job
 log = logging.getLogger(__name__)
 
 _stop = threading.Event()
+# Set when a job is enqueued, so a waiting worker starts at once instead of
+# discovering the work on its next sweep. The sweep stays as a backstop: the
+# enqueue happens inside a transaction that has not committed yet, so a woken
+# worker may look a moment too early and find nothing.
+_wake = threading.Event()
 _threads: list[threading.Thread] = []
 POLL_SECONDS = 2.0
 
@@ -30,6 +35,7 @@ def enqueue(db, document_id: int, kind: str = "extract") -> Job:
     job = Job(kind=kind, document_id=document_id, status="queued")
     db.add(job)
     db.flush()
+    _wake.set()
     return job
 
 
@@ -107,7 +113,10 @@ def _loop(name: str) -> None:
             job_id = None
 
         if job_id is None:
-            _stop.wait(POLL_SECONDS)
+            _wake.wait(POLL_SECONDS)
+            _wake.clear()
+            if _stop.is_set():
+                break
             continue
         _run_job(job_id)
     log.info("worker %s stopped", name)

@@ -62,8 +62,48 @@ def ensure_schema() -> None:
         from app import models  # noqa: F401  (registers mappers)
 
         models.Base.metadata.create_all(engine)
+        _add_missing_columns(models.Base)
         _schema_ready = True
         log.info("schema ensured on %s", engine.url.render_as_string(hide_password=True))
+
+
+def _add_missing_columns(base) -> None:
+    """Add columns the models have gained since the tables were made.
+
+    `create_all` creates missing *tables* and leaves existing ones exactly as
+    they are, so a column added to a model after a database already exists is
+    simply never created — and every query naming it fails with `no such
+    column`, which reads like a bug in the query rather than a database a
+    version behind.
+
+    Only additive, and only nullable columns without defaults: this fills in
+    what is missing and never rewrites, drops or retypes anything, so it
+    cannot lose data. Anything more than that wants a real migration.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    for table in base.metadata.sorted_tables:
+        if table.name not in existing_tables:
+            continue
+        have = {c["name"] for c in inspector.get_columns(table.name)}
+        for column in table.columns:
+            if column.name in have or column.primary_key:
+                continue
+            if not column.nullable:
+                log.warning(
+                    "%s.%s is missing and not nullable; leaving it to a migration",
+                    table.name, column.name,
+                )
+                continue
+            ddl = column.type.compile(engine.dialect)
+            with engine.begin() as conn:
+                conn.execute(text(
+                    f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {ddl}'
+                ))
+            log.info("added missing column %s.%s (%s)", table.name, column.name, ddl)
 
 
 def get_db() -> Iterator[Session]:

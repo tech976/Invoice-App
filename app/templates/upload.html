@@ -91,7 +91,7 @@ async function send(files) {
 }
 
 let timer = null;
-function poll() { if (!timer) timer = setInterval(tick, 2500); }
+function poll() { if (!timer) timer = setInterval(tick, 700); }
 
 async function tick() {
   if (!tracked.size) { clearInterval(timer); timer = null; return; }
