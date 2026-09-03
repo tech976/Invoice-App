@@ -643,6 +643,11 @@ def _read_table(pages: list[PageLayout]):
             kind, charge_kind = table.classify(row)
             amount = totals.parse_amount(row.get("amount"))
 
+            if kind == "total":
+                # The totals strip restating a figure the invoice already
+                # carries in a field of its own. Nothing to add.
+                continue
+
             if kind == "tax":
                 head = row.full_text.lower()
                 for name in ("igst", "cgst", "sgst", "cess"):

@@ -104,11 +104,21 @@ def health() -> JSONResponse:
 
     from app.db import engine
 
+    # The local backend calls nothing, so a missing key is the configured
+    # state rather than a fault. Reporting it as one put a red badge across
+    # the top of a deployment that was working exactly as intended.
+    local = settings.extraction_backend == "local"
     info = {
         "status": "ok",
         "serverless": settings.serverless,
-        "extraction_backend": settings.extraction_backend,
         "database": engine.url.render_as_string(hide_password=True),
+        "extraction_backend": settings.extraction_backend,
+        "backend": settings.extraction_backend,
+        "reader": "local reader" if local else settings.extraction_model,
+        "model": settings.extraction_model,
+        "api_key_configured": bool(settings.anthropic_api_key),
+        "api_key_required": not local,
+        "workers": settings.worker_threads,
     }
     try:
         with engine.connect() as conn:

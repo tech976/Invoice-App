@@ -94,20 +94,26 @@ async def parse_utterance(
         # Kept, not discarded. A reading that came out wrong cannot be
         # diagnosed from the words alone — the recording is the evidence.
         keep = _keep_recording(data, suffix)
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=True) as handle:
+        # Written and closed before it is read. The decoder opens this path
+        # itself, and Windows refuses a second handle on a file the process
+        # still holds open — which surfaced as a bare 'Permission denied' from
+        # inside av, naming the temp file and nothing else.
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as handle:
             handle.write(data)
-            handle.flush()
-            try:
-                # Off the event loop and behind a one-deep queue: the server
-                # keeps answering, and two recordings never fight for cores.
-                result = await runner.run(
-                    "asr", speech.transcribe, Path(handle.name),
-                    learned=vocabulary.learned_terms(db))
-            except speech.SpeechUnavailable as exc:
-                raise HTTPException(503, str(exc)) from exc
-            except Exception as exc:  # noqa: BLE001
-                log.exception("transcription failed")
-                raise HTTPException(500, f"Could not transcribe: {exc}") from exc
+            clip = Path(handle.name)
+        try:
+            # Off the event loop and behind a one-deep queue: the server
+            # keeps answering, and two recordings never fight for cores.
+            result = await runner.run(
+                "asr", speech.transcribe, clip,
+                learned=vocabulary.learned_terms(db))
+        except speech.SpeechUnavailable as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            log.exception("transcription failed")
+            raise HTTPException(500, f"Could not transcribe: {exc}") from exc
+        finally:
+            clip.unlink(missing_ok=True)
         heard = result.text
         engine = result.engine
         duration_ms = result.duration_ms

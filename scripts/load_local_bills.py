@@ -20,15 +20,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import select, text  # noqa: E402
+from sqlalchemy import select  # noqa: E402
 
 from app.config import settings  # noqa: E402
-from app.db import engine, init_db, session_scope  # noqa: E402
+from app.db import clear_ledger, engine, init_db, session_scope  # noqa: E402
 from app.extraction import llm, pipeline  # noqa: E402
 from app.extraction.llm import ExtractionResult  # noqa: E402
 from app.ingest.storage import store_file  # noqa: E402
 from app.business.brokerage import compute_brokerage  # noqa: E402
-from app.models import Base, BrokerageRule, Document, Invoice, Party  # noqa: E402
+from app.models import BrokerageRule, Document, Invoice, Party  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)-7s %(message)s")
 log = logging.getLogger("load")
@@ -58,12 +58,7 @@ def main() -> int:
 
     if args.reset:
         with engine.begin() as conn:
-            if conn.dialect.name == "postgresql":
-                for table in reversed(Base.metadata.sorted_tables):
-                    conn.execute(text(f'TRUNCATE TABLE "{table.name}" RESTART IDENTITY CASCADE'))
-            else:
-                for table in reversed(Base.metadata.sorted_tables):
-                    conn.execute(text(f'DELETE FROM "{table.name}"'))
+            clear_ledger(conn)
         log.info("ledger cleared")
 
     # One reading only: a second pass would just replay the same transcription.

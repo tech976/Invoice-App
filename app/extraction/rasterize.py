@@ -19,6 +19,9 @@ log = logging.getLogger(__name__)
 # costs tokens and upload time without adding any detail the model can use.
 MAX_EDGE = 1568
 
+# Whether the absence of poppler has already been mentioned this run.
+_poppler_reported = False
+
 
 def render_pdf_pages(pdf_path: Path, out_dir: Path, dpi: int | None = None) -> list[Path]:
     """Render every page of `pdf_path` into `out_dir` as page-0001.png etc."""
@@ -34,6 +37,17 @@ def render_pdf_pages(pdf_path: Path, out_dir: Path, dpi: int | None = None) -> l
         )
         if proc.returncode != 0:
             log.error("pdftoppm failed for %s: %s", pdf_path.name, proc.stderr[:400])
+    except FileNotFoundError:
+        # Poppler is not installed here. That is a fact about the machine, not
+        # a fault: pypdfium2 ships its own PDFium and renders the same pages.
+        # Logged once per process rather than per bill, and not as an error —
+        # a red line under every upload of a run that is working is how a
+        # sound deployment comes to look broken.
+        global _poppler_reported
+        if not _poppler_reported:
+            _poppler_reported = True
+            log.info("poppler not installed; rendering pages with pypdfium2")
+        return _render_with_pdfium(pdf_path, out_dir, dpi)
     except (OSError, subprocess.SubprocessError) as exc:
         log.error("pdftoppm unavailable for %s: %s", pdf_path.name, exc)
         return _render_with_pdfium(pdf_path, out_dir, dpi)

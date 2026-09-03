@@ -79,8 +79,21 @@ vercel                 # preview
 vercel --prod          # live
 ```
 
-Vercel reads `vercel.json`, installs `api/requirements.txt`, and serves
-`api/index.py`.
+Vercel installs the dependencies listed in `pyproject.toml` and serves the
+entrypoint it names, `api/index.py`.
+
+The manifest has to be `pyproject.toml` at the root, and the deployed
+dependency list has to live in it. Vercel's Python builder looks for
+`pyproject.toml`, `requirements.txt` or a `Pipfile` **at the root of the
+project** and nowhere else; a `requirements.txt` sitting beside the entrypoint
+was read by the older builder and is now ignored. When it finds no manifest it
+does not fail — it writes an empty one, installs nothing, and the deploy
+succeeds. Every request then dies on the first import with
+`FUNCTION_INVOCATION_FAILED`, which says nothing about the cause.
+
+`requirements.txt` at the root stays the development set, voice stack and all,
+and `.vercelignore` keeps it out of the bundle so it cannot be picked up
+instead.
 
 ### 3. Environment variables
 

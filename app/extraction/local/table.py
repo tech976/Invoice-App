@@ -59,6 +59,16 @@ TERMINATOR_RE = re.compile(
     r"amount \(in words\)|tax amt in words|e\. ?& ?o\.e|continued|"
     r"subject to|this is a computer|company'?s? bank|bank details)\b", re.I)
 
+# Labels in the totals strip that restate a figure the invoice already has a
+# field for. They are not charges, and adding them to `other_charges` counts
+# the same printed rupee twice — enough on its own to fail the grand-total
+# check. Not a terminator: a real charge can be printed below these, so the
+# row is skipped rather than the scan stopped.
+TOTALS_LABEL_RE = re.compile(
+    r"\b(taxable\s+(value|amount)|sub\s*total|gross\s+(value|amount|total)|"
+    r"total\s+(value|amount|before\s+tax)|net\s+(value|amount)|"
+    r"grand\s+total|invoice\s+(value|total))\b", re.I)
+
 # Rows that are not goods.
 TAX_ROW_RE = re.compile(r"\b(output\s+)?(c ?gst|s ?gst|i ?gst|ugst|cess|tcs|tds)\b", re.I)
 CHARGE_WORDS = {
@@ -72,6 +82,31 @@ CHARGE_WORDS = {
     "insurance": ("insurance",),
     "discount": ("discount", "rebate", "cash disc"),
 }
+
+# Every column a label can land in, left to right. The totals strip is
+# right-aligned against the amount, so its label sits under a column that
+# carries figures on a goods row — which is why this is the full set and not
+# just the description ones.
+_LABEL_ORDER: tuple[str, ...] = (
+    "serial", "description", "item_remarks", "hsn", "bags", "quantity",
+    "rate", "rate_uom", "discount", "tax_rate", "tax_amount",
+)
+
+# A cell holding only a figure — an amount, a count, a percentage, a unit
+# symbol. Never part of a label.
+_FIGURE_ONLY_RE = re.compile(r"^[₹Rs\s.,()%+-]*[\d,.]+\s*[%]?\s*(cr|dr)?$", re.I)
+
+
+def _figure_only(text: str) -> bool:
+    """Is this cell a number rather than a word?
+
+    Kept deliberately narrow: it must contain a digit and nothing that could
+    be part of a label. '2.5%' and '(-)0.46' are figures; 'CGST @ 2.5%' and
+    'QTL' are not, and both need to survive into the label.
+    """
+    t = text.strip()
+    return bool(t) and any(c.isdigit() for c in t) and bool(_FIGURE_ONLY_RE.match(t))
+
 
 NUMBER_RE = re.compile(r"^\(?-?[\d,]+(?:\.\d+)?\)?$")
 # An amount as bills print it: '35,59,297.50', '(-)0.46', '₹ 37,41,200.00'.
@@ -144,9 +179,23 @@ class RawRow:
 
         'Less : ROUND OFF' lands with 'ROUND' under the description and 'OFF'
         under the HSN, and neither half names the charge on its own.
+
+        The totals strip is why this cannot stop at the description columns.
+        Its labels are right-aligned against the amount, so 'Taxable Value'
+        and 'Packing & Forwarding' land under whichever column happens to sit
+        there — 'rate' on one layout, 'rate_uom' on the next. Reading only the
+        left-hand columns left those rows with no label at all, which made a
+        printed charge anonymous and hid the end of the table from
+        `_is_terminator`.
+
+        Figures are left out. A label is words, and joining the amount in
+        would give every bare number in the totals strip a 'label' made of its
+        own digits.
         """
-        ordered = " ".join(self.cells.get(k, "") for k in
-                           ("serial", "description", "item_remarks", "hsn"))
+        ordered = " ".join(
+            value for key in _LABEL_ORDER
+            if (value := self.cells.get(key, "").strip()) and not _figure_only(value)
+        )
         return " ".join((ordered + " " + " ".join(self.extra_lines)).split())
 
 
@@ -412,10 +461,11 @@ def split_continuations(row: RawRow) -> tuple[str | None, float | None, str | No
 
 
 def classify(row: RawRow) -> tuple[str, str | None]:
-    """('goods' | 'charge' | 'tax', charge kind).
+    """('goods' | 'charge' | 'tax' | 'total', charge kind).
 
     A charge row carries an amount but no quantity and no rate — packing,
-    handling, freight, round-off. A tax row names a GST head. Everything else
+    handling, freight, round-off. A tax row names a GST head. A total row
+    restates a figure the invoice already holds elsewhere. Everything else
     that has an amount is goods.
     """
     text = row.full_text.lower()
@@ -425,9 +475,23 @@ def classify(row: RawRow) -> tuple[str, str | None]:
     # A charge never carries a quantity — that is what separates 'PACKING &
     # LABOUR 5%' priced at 825.00 from a goods row priced per kilo.
     if not has_qty:
+        if TOTALS_LABEL_RE.search(text):
+            return "total", None
         for kind, words in CHARGE_WORDS.items():
             if any(w in text for w in words):
                 return "charge", kind
         if row.get("amount"):
-            return "charge", "other"
+            # Every real charge names itself on the bill — that is how the
+            # buyer knows what is being billed — so a nameless amount under
+            # the table is the reader having found a figure it cannot account
+            # for, which in practice means the totals strip.
+            #
+            # Booking it as 'other' put the taxable value and the tax into
+            # `other_charges` beside their own fields, and the doubled rupees
+            # then broke the grand-total check on a bill whose arithmetic was
+            # sound. Letting it fall through to goods is no better: a line
+            # with no description and no quantity still adds its amount to the
+            # subtotal. So it is booked nowhere, and if that leaves a real gap
+            # the grand-total check is what says so.
+            return ("charge", "other") if text.strip() else ("total", None)
     return "goods", None
