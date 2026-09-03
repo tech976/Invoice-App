@@ -1,0 +1,15 @@
+# Third-party business records. The same rule as .gitignore and .vercelignore:
+# nothing read off a real bill goes into an image that gets pushed to a
+# registry. The volume supplies data/ at run time.
+data/
+Invoices/
+samples/
+*.pdf
+
+.venv/
+.git/
+.pytest_cache/
+__pycache__/
+*.pyc
+.env
+.DS_Store
