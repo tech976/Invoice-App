@@ -1,0 +1,544 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Analytics</h1>
+    <p class="subtitle mb0">Where the turnover sits, and what it earns.</p>
+  </div>
+  <div class="actions">
+    <select id="fy" style="min-width:170px"><option value="">All financial years</option></select>
+    <a class="btn" href="/reports">Detailed reports</a>
+  </div>
+</div>
+
+<div class="grid c4" id="tiles" style="margin-top:22px"></div>
+
+<div class="viz-card" style="margin-top:16px">
+  <header>
+    <div>
+      <h2>Turnover by month</h2>
+      <p class="hint" id="trend-note"></p>
+    </div>
+  </header>
+  <div id="trend" class="viz"></div>
+</div>
+
+<div class="viz-row">
+  <div class="viz-card">
+    <header>
+      <div>
+        <h2>Turnover by commodity</h2>
+        <p class="hint">What the desk actually moves.</p>
+      </div>
+    </header>
+    <div id="commodity" class="viz"></div>
+  </div>
+  <div class="viz-card">
+    <header>
+      <div>
+        <h2>Where the turnover comes from</h2>
+        <p class="hint" id="conc-note">Share of turnover by seller.</p>
+      </div>
+    </header>
+    <div id="concentration" class="viz"></div>
+  </div>
+</div>
+
+<div class="viz-row">
+  <div class="viz-card">
+    <header>
+      <div>
+        <h2>Top sellers</h2>
+        <p class="hint">By turnover billed.</p>
+      </div>
+    </header>
+    <div id="sellers" class="viz"></div>
+  </div>
+  <div class="viz-card">
+    <header>
+      <div>
+        <h2>Top buyers</h2>
+        <p class="hint">By turnover bought.</p>
+      </div>
+    </header>
+    <div id="buyers" class="viz"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+  /* =====================================================================
+     Chart roles.
+
+     Slots 1-4 of the validated categorical palette, in their documented
+     order. Validated against this application's own white card surface
+     rather than the palette's default: all four clear the lightness band,
+     the chroma floor and the CVD gates (worst adjacent pair yellow/aqua,
+     ΔE 9.1 protan). Aqua and yellow fall below 3:1 against white, so the
+     relief rule applies — every bar and every share segment carries a
+     visible value label, which is what makes those two fills legal here.
+
+     Light only, like the rest of this application: a dark palette would be
+     a different design, not an automatic inversion of this one.
+     ===================================================================== */
+  .viz {
+    --series-1: #2a78d6;   /* blue   — turnover, sellers */
+    --series-2: #eb6834;   /* orange — brokerage, commodities */
+    --series-3: #1baf7a;   /* aqua   — buyers */
+    --series-4: #eda100;   /* yellow — fourth share only */
+    --rest:     #c9ccd3;   /* the tail of a share bar, never an entity */
+    --rail:     #f1f2f5;   /* bar track — chrome, not data */
+    --grid:     #edeef1;
+    --baseline: var(--border-strong);
+  }
+
+  /* A card whose header sits flush with its own content. The shared
+     .card-head adds a second 24px gutter inside an already padded card,
+     which set every chart title 24px to the right of the chart it named. */
+  .viz-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-sm);
+    padding: 18px 22px 20px;
+  }
+  .viz-card > header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 14px; margin-bottom: 18px;
+  }
+  .viz-card h2 { margin: 0; font-size: 14.5px; font-weight: 640; letter-spacing: -0.2px; }
+  .viz-card .hint { margin: 3px 0 0; font-size: 12.5px; color: var(--text-muted); }
+
+  .viz-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 16px; margin-top: 16px; align-items: stretch;
+  }
+  @media (max-width: 1180px) { .viz-row { grid-template-columns: 1fr; } }
+
+  /* ---- stat tiles ---------------------------------------------------- */
+  /* Proportional figures on the headline number: tabular-nums gives every
+     digit the width of a zero, which reads loose at 23px. The columns that
+     must line up vertically keep it. */
+  .stat .value { font-variant-numeric: normal; }
+  .stat .spark { display: block; width: 100%; height: 26px; margin-top: 10px; overflow: visible; }
+
+  /* ---- columns ------------------------------------------------------- */
+  .viz-panel + .viz-panel { margin-top: 22px; }
+  .viz-panel-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+  .viz-key { width: 9px; height: 9px; border-radius: 2px; flex: none; align-self: center; }
+  .viz-panel-name { font-size: 12.5px; font-weight: 600; color: var(--text-body); }
+  .viz-plot { display: grid; grid-template-columns: 62px minmax(0, 1fr); }
+  .viz-yaxis { position: relative; }
+  .viz-area {
+    position: relative;
+    border-bottom: 1px solid var(--baseline);
+  }
+  .viz-gridline { position: absolute; left: 0; right: 0; height: 1px; background: var(--grid); }
+  .viz-ytick {
+    position: absolute; right: 12px; transform: translateY(50%);
+    font-size: 11px; color: var(--text-muted); white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .viz-bands { position: absolute; inset: 0; display: flex; }
+  .viz-band {
+    flex: 1 1 0; min-width: 0; position: relative;
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .viz-col {
+    width: min(24px, 42%);
+    border-radius: 4px 4px 0 0;
+    transition: opacity .12s;
+  }
+  .viz-cap {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    font-size: 11px; font-weight: 600; color: var(--text-body);
+    white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: none;
+  }
+  .viz-band:hover .viz-col { opacity: .74; }
+  .viz-xaxis { display: flex; margin-top: 9px; }
+  .viz-xlabel {
+    flex: 1 1 0; min-width: 0; text-align: center; white-space: nowrap;
+    font-size: 11.5px; color: var(--text-muted);
+  }
+
+  /* ---- ranked bars --------------------------------------------------- */
+  /* Name above its own bar, full width beneath. These are long registered
+     company names; in a fixed label gutter they truncated to the point of
+     being unidentifiable, and the bars lost most of their length to it. */
+  .viz-rank { display: flex; flex-direction: column; gap: 15px; }
+  .viz-item { cursor: default; }
+  .viz-item-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px; margin-bottom: 6px;
+  }
+  .viz-name {
+    font-size: 12.5px; color: var(--text-body); min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .viz-figure { font-size: 12.5px; white-space: nowrap; flex: none; }
+  .viz-figure b { font-weight: 640; color: var(--text); font-variant-numeric: tabular-nums; }
+  .viz-figure span { color: var(--text-muted); margin-left: 6px; }
+  .viz-rail { height: 10px; border-radius: 5px; background: var(--rail); overflow: hidden; }
+  .viz-bar { height: 100%; border-radius: 5px; transition: opacity .12s; }
+  .viz-item:hover .viz-bar { opacity: .74; }
+
+  /* ---- share bar ----------------------------------------------------- */
+  .viz-share { display: flex; height: 28px; gap: 2px; }
+  .viz-seg { cursor: default; transition: opacity .12s; }
+  .viz-seg:hover { opacity: .74; }
+  .viz-seg:first-child { border-radius: 5px 0 0 5px; }
+  .viz-seg:last-child { border-radius: 0 5px 5px 0; }
+  .viz-legend { display: flex; flex-direction: column; gap: 11px; margin-top: 18px; }
+  .viz-legend-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; font-size: 12.5px;
+  }
+  .viz-legend-row > span { display: flex; align-items: center; min-width: 0; }
+  .viz-legend-row i { width: 9px; height: 9px; border-radius: 2px; flex: none; margin-right: 9px; }
+  .viz-legend-name {
+    color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .viz-legend-val {
+    color: var(--text-muted); font-variant-numeric: tabular-nums; flex: none; padding-left: 12px;
+  }
+  .viz-legend-val b { color: var(--text); font-weight: 640; }
+  .viz-legend-val em { font-style: normal; padding: 0 6px; color: var(--border-strong); }
+
+  .viz-empty {
+    color: var(--text-muted); font-size: 13px;
+    padding: 30px 2px; text-align: center;
+  }
+
+  /* ---- tooltip ------------------------------------------------------- */
+  .viz-tip {
+    position: fixed; z-index: 60; pointer-events: none; opacity: 0;
+    background: var(--text); color: #fff; font-size: 12px; line-height: 1.5;
+    padding: 9px 11px; border-radius: var(--r); white-space: nowrap;
+    box-shadow: 0 8px 24px rgba(16,24,40,.22); transition: opacity .1s;
+  }
+  .viz-tip .t-name { font-weight: 640; display: flex; align-items: center; gap: 7px; }
+  .viz-tip .t-name i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .viz-tip .t-row { color: rgba(255,255,255,.72); margin-top: 3px; }
+  .viz-tip .t-row b { color: #fff; font-weight: 600; }
+</style>
+
+<script>
+const tip = Object.assign(document.createElement('div'), { className: 'viz-tip' });
+document.body.appendChild(tip);
+
+function showTip(html, ev) {
+  tip.innerHTML = html;
+  tip.style.opacity = '1';
+  const pad = 14;
+  let x = ev.clientX + pad, y = ev.clientY + pad;
+  const box = tip.getBoundingClientRect();
+  if (x + box.width > innerWidth - 8) x = ev.clientX - box.width - pad;
+  if (y + box.height > innerHeight - 8) y = ev.clientY - box.height - pad;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+const hideTip = () => { tip.style.opacity = '0'; };
+
+/* Attach a tooltip to a mark, and keep the two listeners in one place. */
+function hoverable(el, html) {
+  el.addEventListener('mousemove', ev => showTip(html, ev));
+  el.addEventListener('mouseleave', hideTip);
+}
+
+const tipHead = (name, colour) =>
+  `<div class="t-name">${colour ? `<i style="background:${colour}"></i>` : ''}${esc(name)}</div>`;
+const tipRow = (label, value) => `<div class="t-row">${esc(label)} <b>${value}</b></div>`;
+
+/* A rupee figure shortened for an axis, in the groupings actually used here:
+   crore and lakh, never millions. */
+function short(v) {
+  const n = Math.abs(v);
+  if (n >= 1e7) return '₹' + (v / 1e7).toFixed(n >= 1e8 ? 0 : 1) + ' cr';
+  if (n >= 1e5) return '₹' + (v / 1e5).toFixed(n >= 1e6 ? 0 : 1) + ' L';
+  if (n >= 1e3) return '₹' + Math.round(v / 1e3) + 'k';
+  return '₹' + Math.round(v);
+}
+
+const bills = n => `${n} bill${n === 1 ? '' : 's'}`;
+
+/* One unit for a whole panel, chosen from its peak. */
+function axisFmt(peak) {
+  const [div, suffix] =
+    peak >= 1e7 ? [1e7, ' cr'] :
+    peak >= 1e5 ? [1e5, ' L']  :
+    peak >= 1e3 ? [1e3, 'k']   : [1, ''];
+  return v => {
+    if (!v) return '\u20b90';
+    const n = v / div;
+    return '\u20b9' + (Number.isInteger(n) ? n : n.toFixed(1)) + suffix;
+  };
+}
+
+function empty(el, message) {
+  el.innerHTML = `<div class="viz-empty">${esc(message)}</div>`;
+}
+
+/* Axis ticks on round numbers, so the gridlines mean something a reader can
+   hold — 0 / 20L / 40L, never 0 / 26.33L / 52.66L. */
+function niceTicks(max, target = 4) {
+  if (!(max > 0)) return [0, 1];
+  const mag = Math.pow(10, Math.floor(Math.log10(max / target)));
+  const norm = (max / target) / mag;
+  const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag;
+  const ticks = [];
+  for (let v = 0; v < max - step * 1e-9; v += step) ticks.push(v);
+  ticks.push(ticks[ticks.length - 1] + step);
+  return ticks;
+}
+
+/* --------------------------------------------------------------------
+   Stat-tile sparkline: the shape behind the headline figure. Drawn as a
+   muted line with the closing segment in the measure's own colour, so the
+   current period reads without an end dot — a dot cannot survive the
+   non-uniform scaling this uses to fill the tile width.
+   -------------------------------------------------------------------- */
+function sparkline(values, colour) {
+  if (values.length < 2) return '';
+  const w = 100, h = 26, pad = 3;
+  const max = Math.max(...values), min = Math.min(...values);
+  const span = (max - min) || 1;
+  const pts = values.map((v, i) => [
+    (i / (values.length - 1)) * w,
+    h - pad - ((v - min) / span) * (h - pad * 2),
+  ]);
+  const path = ps => ps.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(2)} ${p[1].toFixed(2)}`).join(' ');
+  const stroke = 'stroke-width="2" fill="none" stroke-linecap="round" ' +
+                 'stroke-linejoin="round" vector-effect="non-scaling-stroke"';
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+    <path d="${path(pts)}" stroke="#d5d8de" ${stroke}/>
+    <path d="${path(pts.slice(-2))}" stroke="${colour}" ${stroke}/>
+  </svg>`;
+}
+
+/* --------------------------------------------------------------------
+   Ranked bars: magnitude across named things. The name sits on its own
+   line above a full-width bar, because these names are long and a fixed
+   label gutter either truncates them or starves the bars.
+
+   Every bar is directly labelled. That is not decoration: two of the
+   fills used on this page sit below 3:1 against white, and a visible
+   value is what keeps them legible.
+   -------------------------------------------------------------------- */
+function ranked(el, rows, { colour = 'var(--series-1)', tint = null } = {}) {
+  if (!rows.length) return empty(el, 'Nothing recorded yet.');
+  const max = Math.max(...rows.map(r => r.value)) || 1;
+  const fill = (r, i) => (tint ? tint(r, i) : colour);
+
+  el.innerHTML = `<div class="viz-rank">
+    ${rows.map((r, i) => `
+      <div class="viz-item" data-i="${i}">
+        <div class="viz-item-head">
+          <span class="viz-name" title="${esc(r.label)}">${esc(r.label)}</span>
+          <span class="viz-figure"><b>${short(r.value)}</b>${r.meta ? `<span>${esc(r.meta)}</span>` : ''}</span>
+        </div>
+        <div class="viz-rail">
+          <div class="viz-bar" style="width:${Math.max((r.value / max) * 100, 1)}%;
+               background:${fill(r, i)}"></div>
+        </div>
+      </div>`).join('')}
+  </div>`;
+
+  el.querySelectorAll('.viz-item').forEach(item => {
+    const r = rows[+item.dataset.i];
+    hoverable(item, tipHead(r.label, fill(r, +item.dataset.i)) +
+      tipRow('Turnover', rupees(r.value)) +
+      (r.note ? `<div class="t-row">${esc(r.note)}</div>` : ''));
+  });
+}
+
+/* --------------------------------------------------------------------
+   Two measures over the same months, on two panels rather than two
+   y-axes. Turnover runs in crores and brokerage in thousands; drawn
+   against one scale the brokerage is invisible, and against a second
+   axis the eye compares two scales that have nothing to do with each
+   other. Small multiples say "same months, different measure" without
+   inviting either mistake — and each panel keeps its own baseline, so
+   nothing hangs below a line as though it were negative.
+
+   Both panels share one band layout, so a month sits at the same x in
+   each and the pair can be read as one chart.
+   -------------------------------------------------------------------- */
+function columns(el, months) {
+  if (!months.length) return empty(el, 'No dated invoices yet.');
+
+  // Direct labels while they fit; past that the axis and the tooltip carry
+  // the values, rather than a row of numbers colliding with each other.
+  const caps = months.length <= 8;
+
+  const panel = (key, colour, name, height, tickTarget) => {
+    const peak = Math.max(...months.map(m => m[key])) || 1;
+    const ticks = niceTicks(peak, tickTarget);
+    const top = ticks[ticks.length - 1];
+    const pct = v => (v / top) * 100;
+    const fmt = axisFmt(peak);
+    return `
+      <div class="viz-panel">
+        <div class="viz-panel-head">
+          <span class="viz-key" style="background:${colour}"></span>
+          <span class="viz-panel-name">${esc(name)}</span>
+        </div>
+        <div class="viz-plot">
+          <div class="viz-yaxis" style="height:${height}px">
+            ${ticks.map(v => `<div class="viz-ytick" style="bottom:${pct(v)}%">${fmt(v)}</div>`).join('')}
+          </div>
+          <div class="viz-area" style="height:${height}px">
+            ${ticks.filter(v => v > 0).map(v =>
+              `<div class="viz-gridline" style="bottom:${pct(v)}%"></div>`).join('')}
+            <div class="viz-bands">
+              ${months.map((m, i) => `
+                <div class="viz-band" data-i="${i}">
+                  ${caps ? `<div class="viz-cap" style="bottom:calc(${pct(m[key])}% + 7px)">
+                    ${fmt(m[key])}</div>` : ''}
+                  <div class="viz-col" style="height:${Math.max(pct(m[key]), 0.8)}%;
+                       background:${colour}"></div>
+                </div>`).join('')}
+            </div>
+          </div>
+        </div>
+      </div>`;
+  };
+
+  el.innerHTML =
+    panel('grand_total', 'var(--series-1)', 'Turnover', 176, 4) +
+    panel('brokerage', 'var(--series-2)', 'Brokerage accrued', 78, 2) +
+    `<div class="viz-plot" style="margin-top:0">
+       <div></div>
+       <div class="viz-xaxis">
+         ${months.map(m => `<div class="viz-xlabel">${esc(m.label)}</div>`).join('')}
+       </div>
+     </div>`;
+
+  el.querySelectorAll('.viz-band').forEach(band => {
+    const m = months[+band.dataset.i];
+    hoverable(band, tipHead(m.label) +
+      tipRow('Turnover', rupees(m.grand_total)) +
+      tipRow('Brokerage', rupees(m.brokerage)) +
+      `<div class="t-row">${bills(m.invoice_count)}</div>`);
+  });
+}
+
+/* --------------------------------------------------------------------
+   One stacked bar: how much of the turnover the largest sellers carry.
+   The question is concentration — whether the desk rests on two firms
+   — and a share-of-whole is the form that answers it.
+
+   Slots 1-4 name the four largest sellers; the grey tail is not an
+   entity and never takes a categorical slot.
+   -------------------------------------------------------------------- */
+const SHARE_COLOURS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)'];
+
+function concentration(el, rows, total, noteEl) {
+  if (!rows.length || !total) return empty(el, 'Nothing recorded yet.');
+  const top = rows.slice(0, 4);
+  const rest = total - top.reduce((a, r) => a + r.value, 0);
+  const parts = top.map((r, i) => ({ ...r, colour: SHARE_COLOURS[i] }));
+  if (rest > 1) parts.push({ label: 'Everyone else', value: rest, colour: 'var(--rest)' });
+
+  const share = v => ((v / total) * 100).toFixed(1) + '%';
+  if (noteEl) {
+    const held = top.reduce((a, r) => a + r.value, 0);
+    noteEl.textContent = rest > 1
+      ? `Top ${top.length} sellers carry ${share(held)} of turnover.`
+      : `All turnover comes from ${top.length} seller${top.length === 1 ? '' : 's'}.`;
+  }
+
+  el.innerHTML = `
+    <div class="viz-share">
+      ${parts.map((p, i) => `
+        <div class="viz-seg" data-i="${i}" style="width:${(p.value / total) * 100}%;
+             background:${p.colour}"></div>`).join('')}
+    </div>
+    <div class="viz-legend">
+      ${parts.map(p => `
+        <span class="viz-legend-row">
+          <span><i style="background:${p.colour}"></i>
+            <span class="viz-legend-name">${esc(p.label)}</span></span>
+          <span class="viz-legend-val"><b>${share(p.value)}</b><em>·</em>${short(p.value)}</span>
+        </span>`).join('')}
+    </div>`;
+
+  el.querySelectorAll('.viz-seg').forEach(seg => {
+    const p = parts[+seg.dataset.i];
+    hoverable(seg, tipHead(p.label, p.colour) +
+      tipRow('Turnover', rupees(p.value)) +
+      tipRow('Share', share(p.value)));
+  });
+}
+
+/* ------------------------------------------------------------------ */
+
+async function load(fy) {
+  const [s, months, sellers, buyers, products] = await Promise.all([
+    api('/api/reports/summary?' + qs({ financial_year: fy })),
+    api('/api/reports/timeline?' + qs({ financial_year: fy })),
+    api('/api/reports/by-seller?' + qs({ financial_year: fy, limit: 8 })),
+    api('/api/reports/by-buyer?' + qs({ financial_year: fy, limit: 8 })),
+    api('/api/reports/by-product?' + qs({ financial_year: fy, limit: 8 })),
+  ]);
+
+  const sel = document.getElementById('fy');
+  if (!sel.dataset.filled) {
+    s.available_years.forEach(y => sel.add(new Option(y, y)));
+    sel.dataset.filled = '1';
+    sel.value = fy || '';
+  }
+
+  const perBill = s.invoice_count ? s.grand_total / s.invoice_count : 0;
+  const rate = s.taxable_value ? (s.brokerage_accrued / s.taxable_value) * 100 : 0;
+  const series = key => months.months.map(m => m[key]);
+
+  document.getElementById('tiles').innerHTML = `
+    <div class="stat"><div class="label">Turnover</div>
+      <div class="value">${rupees(s.grand_total)}</div>
+      <div class="sub">${bills(s.invoice_count)} · ${rupees(perBill)} average</div>
+      ${sparkline(series('grand_total'), '#2a78d6')}</div>
+    <div class="stat"><div class="label">Brokerage accrued</div>
+      <div class="value">${rupees(s.brokerage_accrued)}</div>
+      <div class="sub">${rate.toFixed(2)}% of taxable value</div>
+      ${sparkline(series('brokerage'), '#eb6834')}</div>
+    <div class="stat"><div class="label">GST on these bills</div>
+      <div class="value">${rupees(s.tax_total)}</div>
+      <div class="sub">taxable ${rupees(s.taxable_value)}</div></div>
+    <div class="stat ${s.needs_review ? 'alert' : ''}"><div class="label">Awaiting review</div>
+      <div class="value">${s.needs_review}</div>
+      <div class="sub">${s.party_count} parties · ${s.product_count} products</div></div>`;
+
+  const monthCount = months.months.length;
+  document.getElementById('trend-note').textContent =
+    monthCount === 0 ? 'Nothing billed yet.'
+    : monthCount === 1 ? 'One month recorded so far.'
+    : `${monthCount} months recorded. Each panel keeps its own scale.`;
+  columns(document.getElementById('trend'), months.months);
+
+  const sellerRows = sellers.rows.map(r => ({
+    label: r.party.name, value: r.grand_total,
+    meta: bills(r.invoice_count), note: `Last bill ${dmy(r.last_invoice)}`,
+  }));
+
+  // One series, one colour. The share bar below is where a firm takes a
+  // hue of its own; repeating that here would spend the colour channel on
+  // rank, which the bar lengths already carry.
+  ranked(document.getElementById('sellers'), sellerRows);
+  ranked(document.getElementById('buyers'), buyers.rows.map(r => ({
+    label: r.party.name, value: r.grand_total,
+    meta: bills(r.invoice_count), note: `Last bill ${dmy(r.last_invoice)}`,
+  })), { colour: 'var(--series-3)' });
+
+  ranked(document.getElementById('commodity'), products.rows.map(r => ({
+    label: r.product, value: r.value,
+    meta: bills(r.invoice_count), note: `${qty(r.quantity)} at about ${rupees(r.avg_rate)}`,
+  })), { colour: 'var(--series-2)' });
+
+  concentration(document.getElementById('concentration'), sellerRows, s.grand_total,
+                document.getElementById('conc-note'));
+}
+
+document.getElementById('fy').addEventListener('change', e => load(e.target.value));
+load('');
+</script>
+{% endblock %}

@@ -163,6 +163,11 @@ if not settings.serverless:
         return _page(request, "trades.html", title="Trades", nav="trades")
 
 
+@app.get("/analytics")
+def page_analytics(request: Request):
+    return _page(request, "analytics.html", title="Analytics", nav="analytics")
+
+
 @app.get("/invoices")
 def page_invoices(request: Request):
     return _page(request, "invoices.html", title="Invoices", nav="invoices")

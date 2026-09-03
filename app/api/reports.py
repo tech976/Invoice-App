@@ -375,6 +375,51 @@ def summary(
     }
 
 
+@router.get("/reports/timeline")
+def timeline(
+    financial_year: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Turnover and brokerage month by month.
+
+    Grouped in Python rather than in SQL: `date_trunc` is Postgres, `strftime`
+    is SQLite, and this app is routinely run on both. The row count here is
+    one per invoice, which is nothing to carry into memory.
+    """
+    stmt = select(
+        Invoice.invoice_date, Invoice.grand_total, Invoice.taxable_value,
+    ).where(_counted(), Invoice.invoice_date.is_not(None))
+    if financial_year:
+        stmt = stmt.where(Invoice.financial_year == financial_year)
+
+    buckets: dict[str, dict] = {}
+    for invoice_date, grand, taxable in db.execute(stmt).all():
+        key = invoice_date.strftime("%Y-%m")
+        row = buckets.setdefault(
+            key, {"month": key, "label": invoice_date.strftime("%b %Y"),
+                  "invoice_count": 0, "grand_total": 0.0, "taxable_value": 0.0}
+        )
+        row["invoice_count"] += 1
+        row["grand_total"] += float(grand or 0)
+        row["taxable_value"] += float(taxable or 0)
+
+    brokerage = select(
+        Invoice.invoice_date, func.coalesce(BrokerageEntry.amount, 0)
+    ).join(BrokerageEntry, BrokerageEntry.invoice_id == Invoice.id).where(
+        _counted(), Invoice.invoice_date.is_not(None)
+    )
+    if financial_year:
+        brokerage = brokerage.where(Invoice.financial_year == financial_year)
+    for invoice_date, amount in db.execute(brokerage).all():
+        key = invoice_date.strftime("%Y-%m")
+        if key in buckets:
+            buckets[key]["brokerage"] = buckets[key].get("brokerage", 0.0) + float(amount or 0)
+
+    months = [dict(b, brokerage=b.get("brokerage", 0.0))
+              for b in sorted(buckets.values(), key=lambda r: r["month"])]
+    return {"financial_year": financial_year, "months": months}
+
+
 @router.get("/reports/review-queue")
 def review_queue(limit: int = Query(100, le=500), db: Session = Depends(get_db)) -> dict:
     """Invoices waiting on a human, worst first."""
