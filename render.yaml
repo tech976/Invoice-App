@@ -29,6 +29,16 @@ services:
       # outlives the request, which is all voice entry actually needs.
       - key: ENABLE_VOICE
         value: "1"
+      # 'small' is the better recogniser and what runs locally, but its
+      # int8 weights are about 250 MB resident and a free instance has 512 MB
+      # for the model, the interpreter and the web server together. 'base' is
+      # roughly 75 MB and leaves room to answer requests. Raise this to
+      # 'small' once the instance has the memory for it — Render's Starter
+      # plan is still 512 MB, so that means Standard, not the next tier up.
+      # Set at build time too: the model is fetched during the build, and
+      # fetching one and loading another would download 250 MB for nothing.
+      - key: SPEECH_MODEL
+        value: "base"
       - key: PYTHON_VERSION
         value: "3.12.7"
       - key: DATABASE_URL
