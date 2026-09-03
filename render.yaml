@@ -8,13 +8,26 @@ services:
     name: invoice-ledger
     runtime: python
     plan: free
-    buildCommand: pip install -r api/requirements.txt
+    # api/requirements.txt is gone — pyproject.toml is what Vercel installs,
+    # and it carries neither uvicorn nor the speech stack because that host
+    # can run neither. A server needs both, so it installs the server list.
+    # The model is fetched here rather than at run time: speech.py loads it
+    # with local_files_only, so it must already be on disk when a request
+    # arrives.
+    buildCommand: >-
+      pip install -r deploy/requirements-server.txt &&
+      python scripts/fetch_speech_model.py
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       # No disk worth keeping anything on: a free instance's filesystem is
       # wiped on every deploy. So bills live in the database and are read
       # during the upload request, exactly as on any serverless host.
       - key: SERVERLESS
+        value: "1"
+      # SERVERLESS says where bills are kept, not whether anyone may speak.
+      # This host wipes its disk on deploy but does run a real process that
+      # outlives the request, which is all voice entry actually needs.
+      - key: ENABLE_VOICE
         value: "1"
       - key: PYTHON_VERSION
         value: "3.12.7"

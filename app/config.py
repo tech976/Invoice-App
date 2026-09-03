@@ -66,6 +66,16 @@ class Settings(BaseSettings):
     crosscheck_min_confidence: float = 0.90
 
     # --- voice entry ----------------------------------------------------
+    # Whether voice entry is served at all.
+    #
+    # It needs a speech model on disk and a process that outlives the request
+    # that started it, which a serverless host has neither of — so it is off
+    # there and on everywhere else. That default conflated two separate
+    # things, though: SERVERLESS also means "keep bills in the database rather
+    # than on a disk that gets wiped", which is true of hosts that can run
+    # voice perfectly well. ENABLE_VOICE settles the question on its own.
+    enable_voice: bool | None = None
+
     # Which recogniser model to load. 'small' is the smallest that copes with
     # Hindi/Marathi/Gujarati mixed with English; 'base' is faster and worse.
     speech_model: str = "small"
@@ -147,6 +157,13 @@ class Settings(BaseSettings):
                 if not self.serverless:
                     raise
                 return
+
+    @property
+    def voice_enabled(self) -> bool:
+        """Whether to serve voice entry, before checking it actually imports."""
+        if self.enable_voice is not None:
+            return self.enable_voice
+        return not self.serverless
 
     @property
     def scratch_dir(self) -> Path:

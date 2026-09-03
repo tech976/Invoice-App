@@ -71,11 +71,17 @@ app.include_router(reports_router)
 # Voice entry needs a speech model and a language model on the machine, which
 # a serverless host has neither the disk nor the lifetime for. Imported only
 # where it can actually run, so its dependencies stay out of that build.
-if not settings.serverless:
+#
+# Whether it loaded is what the screens are gated on, not what was asked for:
+# a host can set ENABLE_VOICE and still be missing the speech stack, and a
+# menu entry leading to a 500 is worse than no menu entry.
+voice_ready = False
+if settings.voice_enabled:
     try:
         from app.api.voice import router as voice_router
 
         app.include_router(voice_router)
+        voice_ready = True
     except ImportError as exc:  # noqa: BLE001 - the ledger stands on its own
         # A build without the speech stack should serve the ledger rather
         # than fail to start over a feature it was never meant to carry.
@@ -142,7 +148,8 @@ def health() -> JSONResponse:
 
 def _page(request: Request, name: str, **context):
     return templates.TemplateResponse(
-        request=request, name=name, context={"settings": settings, **context}
+        request=request, name=name,
+        context={"settings": settings, "voice_ready": voice_ready, **context},
     )
 
 
@@ -158,7 +165,7 @@ def page_upload(request: Request):
 
 # The voice screens exist only where voice entry does. Serving them on a host
 # with no recogniser would give a microphone button that cannot work.
-if not settings.serverless:
+if voice_ready:
 
     @app.get("/speak")
     def page_speak(request: Request):

@@ -39,7 +39,7 @@
 
 <script>
 const $ = s => document.querySelector(s);
-let current = null, recorder = null, chunks = [];
+let current = null, recorder = null;
 
 const num = v => v == null ? '' : Number(v).toLocaleString('en-IN');
 
@@ -56,23 +56,67 @@ async function boot() {
 }
 
 // --- recording -----------------------------------------------------------
+//
+// getUserMedia is asynchronous and the button is held for as little as a
+// moment, so a release routinely arrives while permission is still being
+// granted. Two things follow, and both used to go wrong.
+//
+// The release has to be remembered: `held` is lowered on mouseup whether or
+// not a recorder exists yet, and the start path rechecks it after the await.
+// Without that a recorder began life already abandoned and ran forever.
+//
+// And the buffer has to belong to the recording, not to the page. One buffer
+// shared across presses meant a second press cleared the first recording's
+// audio before its onstop had read it, and what got posted was an empty blob
+// — which the server answered with "The recording is empty."
+let held = false, starting = false;
+
 async function startRec() {
-  const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-  recorder = new MediaRecorder(stream);
-  chunks = [];
-  recorder.ondataavailable = e => chunks.push(e.data);
-  recorder.onstop = async () => {
+  if (starting || (recorder && recorder.state === 'recording')) return;
+  starting = true;
+  held = true;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({audio:true});
+  } catch (err) {
+    starting = false; held = false;
+    $('#rec-state').innerHTML = `<span class="warn">No microphone: ${esc(err.message)}</span>`;
+    return;
+  }
+  starting = false;
+
+  // Released during the await: never start, and hand the microphone back.
+  if (!held) {
     stream.getTracks().forEach(t => t.stop());
+    $('#rec-state').textContent = 'Ready';
+    return;
+  }
+
+  const mine = [];                      // this recording's audio, not the page's
+  const rec = new MediaRecorder(stream);
+  recorder = rec;
+  rec.ondataavailable = e => { if (e.data && e.data.size) mine.push(e.data); };
+  rec.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop());
+    if (recorder === rec) recorder = null;
+    const blob = new Blob(mine, {type:'audio/webm'});
+    if (!blob.size) {
+      $('#rec-state').innerHTML = '<span class="warn">Nothing was recorded — hold the button while you speak.</span>';
+      return;
+    }
     $('#rec-state').textContent = 'Listening back…';
-    const blob = new Blob(chunks, {type:'audio/webm'});
     const fd = new FormData();
     fd.append('audio', blob, 'clip.webm');
     await send(fd);
   };
-  recorder.start();
+  rec.start();
   $('#rec-state').textContent = 'Recording — release to stop';
 }
-function stopRec() { if (recorder && recorder.state === 'recording') recorder.stop(); }
+
+function stopRec() {
+  held = false;
+  if (recorder && recorder.state === 'recording') recorder.stop();
+}
 
 ['mousedown','touchstart'].forEach(e => $('#rec').addEventListener(e, ev => { ev.preventDefault(); startRec(); }));
 ['mouseup','touchend','mouseleave'].forEach(e => $('#rec').addEventListener(e, ev => { ev.preventDefault(); stopRec(); }));
